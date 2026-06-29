@@ -4,13 +4,16 @@ scripts/01_generate_oracle_labels.py
 
 Fully automated oracle label generation for router bootstrap training.
 
-Loads MMLU (2000 samples) and GSM8K (500 samples) from HuggingFace datasets.
-For each prompt, generates answers from all three base models, extracts the
-predicted answer, compares with ground truth, and writes oracle_labels.jsonl.
+Three oracle modes (--oracle-mode):
+  exact_match          Match against ground-truth answer (MMLU letter, GSM8K number).
+                       Fast but low-quality — tiny models rarely get answers right.
+  judge                Qwen2.5-1.5B-Instruct ranks model answers by quality.
+                       ⭐ RECOMMENDED. Architecturally consistent with Phase 1.
+  judge_ppl_fallback   Judge ranking + perplexity fallback when judge is uncertain.
 
 Output format (one JSON object per line):
   {"prompt": "...", "model_answers": {"qwen": "...", ...},
-   "ground_truth": "...", "best_model": "qwen", "scores": {"qwen": 1, ...}}
+   "best_model": "qwen", "scores": {"qwen": 0.95, ...}, "oracle_mode": "judge"}
 """
 from __future__ import annotations
 
@@ -23,7 +26,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
+import torch.nn.functional as F
 from datasets import load_dataset
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -32,90 +37,10 @@ from src.models.loader import FrozenModelWrapper, load_all_models  # noqa: E402
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Answer extraction helpers
-# ═══════════════════════════════════════════════════════════════════════════
-
-def _extract_mmlu_answer(text: str) -> Optional[str]:
-    """Extract the predicted letter choice (A/B/C/D) from a model response.
-
-    Heuristics (tried in order):
-      1. "(X)" pattern         → "C"  in  "The answer is (C)"
-      2. "answer is X"         → "B"  in  "the answer is B"
-      3. "answer: X"           → "A"  in  "Answer: A"
-      4. First standalone capital letter A-D at the beginning of a line
-      5. Last standalone capital letter A-D in the text
-    """
-    text = text.strip()
-
-    # 1. (X) pattern
-    m = re.search(r"\(([A-D])\)", text)
-    if m:
-        return m.group(1)
-
-    # 2. "answer is X"
-    m = re.search(r"answer\s+is\s+([A-D])\b", text, re.IGNORECASE)
-    if m:
-        return m.group(1)
-
-    # 3. "answer: X"
-    m = re.search(r"answer\s*:\s*([A-D])\b", text, re.IGNORECASE)
-    if m:
-        return m.group(1)
-
-    # 4. First standalone A-D at line start
-    m = re.search(r"^([A-D])[\.\)\s]", text, re.MULTILINE)
-    if m:
-        return m.group(1)
-
-    # 5. Last standalone A-D
-    matches = re.findall(r"\b([A-D])\b", text)
-    if matches:
-        return matches[-1]
-
-    return None
-
-
-def _extract_gsm8k_answer(text: str) -> Optional[float]:
-    """Extract the final numeric answer from a GSM8K model response.
-
-    Heuristics:
-      1. "#### X" pattern (standard GSM8K format)
-      2. "answer is X"
-      3. Last number in the text
-    """
-    text = text.strip()
-
-    # 1. #### X
-    m = re.search(r"####\s*(-?[\d,]+\.?\d*)", text)
-    if m:
-        return float(m.group(1).replace(",", ""))
-
-    # 2. "answer is X"
-    m = re.search(r"answer\s+is\s+(-?[\d,]+\.?\d*)", text, re.IGNORECASE)
-    if m:
-        return float(m.group(1).replace(",", ""))
-
-    # 3. Last number in text
-    numbers = re.findall(r"-?[\d,]+\.?\d*", text)
-    if numbers:
-        # Filter to plausible numbers (not years, not tiny fractions)
-        for n_str in reversed(numbers):
-            try:
-                n = float(n_str.replace(",", ""))
-                if abs(n) < 1e6 and abs(n) > 1e-8:
-                    return n
-            except ValueError:
-                continue
-
-    return None
-
-
-# ═══════════════════════════════════════════════════════════════════════════
 # Prompt formatting
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _format_mmlu_prompt(question: str, choices: List[str]) -> str:
-    """Format an MMLU multiple-choice prompt."""
     letters = ["A", "B", "C", "D"]
     parts = [question]
     for letter, choice in zip(letters, choices):
@@ -125,7 +50,6 @@ def _format_mmlu_prompt(question: str, choices: List[str]) -> str:
 
 
 def _format_gsm8k_prompt(question: str) -> str:
-    """Format a GSM8K math prompt."""
     return f"Question: {question}\n\nLet's solve this step by step.\n\n#### "
 
 
@@ -134,12 +58,8 @@ def _format_gsm8k_prompt(question: str) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _load_mmlu_prompts(n: int, seed: int) -> List[Dict[str, Any]]:
-    """Load MMLU prompts from all subjects."""
     print(f"  [data] Loading MMLU (target: {n} samples)…")
     items: List[Dict[str, Any]] = []
-    rng = random.Random(seed)
-
-    # Load from a few subjects to get diversity
     subjects = [
         "abstract_algebra", "college_chemistry", "computer_security",
         "high_school_mathematics", "international_law", "moral_scenarios",
@@ -152,44 +72,246 @@ def _load_mmlu_prompts(n: int, seed: int) -> List[Dict[str, Any]]:
                 items.append({
                     "subject": subject,
                     "question": example["question"],
-                    "choices": [example[f"choices"][i] if isinstance(example["choices"], list)
+                    "choices": [example["choices"][i] if isinstance(example["choices"], list)
                                 else example.get(f"choice_{i}", "") for i in range(4)],
-                    "answer": example["answer"],  # 0-3 or "A"-"D"
+                    "answer": example["answer"],
                     "source": "mmlu",
                 })
-                if len(items) >= n * 2:  # oversample then filter
+                if len(items) >= n * 2:
                     break
         except Exception as e:
             print(f"    Warning: could not load {subject}: {e}")
-
-    rng.shuffle(items)
+    random.Random(seed).shuffle(items)
     return items[:n]
 
 
 def _load_gsm8k_prompts(n: int, seed: int) -> List[Dict[str, Any]]:
-    """Load GSM8K prompts."""
     print(f"  [data] Loading GSM8K (target: {n} samples)…")
     items: List[Dict[str, Any]] = []
-    rng = random.Random(seed)
-
     ds = load_dataset("gsm8k", "main", split="test", streaming=True)
     for example in ds:
-        answer_text = example["answer"]
-        # Extract the final number after "####"
-        m = re.search(r"####\s*(-?[\d,]+\.?\d*)", answer_text)
+        m = re.search(r"####\s*(-?[\d,]+\.?\d*)", example["answer"])
         if not m:
             continue
-        ground_truth = float(m.group(1).replace(",", ""))
         items.append({
             "question": example["question"],
-            "answer": ground_truth,
+            "answer": float(m.group(1).replace(",", "")),
             "source": "gsm8k",
         })
         if len(items) >= n:
             break
-
-    rng.shuffle(items)
+    random.Random(seed).shuffle(items)
     return items
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Oracle: Exact Match (original)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _score_exact_match(
+    model_answers: Dict[str, str],
+    source: str,
+    ground_truth_letter: str,
+    ground_truth_num: float,
+    model_ids: List[str],
+) -> Tuple[Dict[str, float], str]:
+    scores: Dict[str, float] = {}
+    for mid in model_ids:
+        ans = model_answers[mid]
+        if source == "mmlu":
+            pred = _extract_mmlu_answer(ans)
+            scores[mid] = 1.0 if pred == ground_truth_letter else 0.0
+        else:
+            pred = _extract_gsm8k_answer(ans)
+            scores[mid] = 1.0 if pred is not None and abs(pred - ground_truth_num) < 1e-6 else 0.0
+    best = max(scores, key=scores.get)
+    if scores[best] == 0.0:
+        best = random.choice(model_ids)
+    return scores, best
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Oracle: Meta-Model Judge
+# ═══════════════════════════════════════════════════════════════════════════
+
+JUDGE_RANKING_PROMPT = """You are an expert judge evaluating answers from multiple AI assistants.
+
+## Question
+{prompt}
+
+## Answers
+{answers}
+
+## Task
+Rank these answers from BEST (1) to WORST ({n}). Consider:
+- Factual accuracy and correctness
+- Clarity and coherence
+- Relevance to the question
+- Absence of hallucinations or contradictions
+
+Reply with a JSON object only:
+{{"ranking": ["model_name", ...], "confidence": 0.0-1.0, "ties": false}}
+"""
+
+
+def _rank_with_judge(
+    prompt: str,
+    model_answers: Dict[str, str],
+    judge_model,
+    judge_tokenizer,
+    device: str,
+) -> Tuple[Dict[str, float], str, float]:
+    """Use Qwen2.5-1.5B-Instruct to rank model answers.
+
+    Returns (scores_dict, best_model, confidence).
+    """
+    model_ids = sorted(model_answers.keys())
+    n = len(model_ids)
+
+    # Build answer list with labels
+    answers_str = ""
+    for i, mid in enumerate(model_ids):
+        label = chr(65 + i)  # A, B, C
+        ans = model_answers[mid][:500]  # truncate long answers
+        answers_str += f"Assistant {label} ({mid}):\n{ans}\n\n"
+
+    judge_input = JUDGE_RANKING_PROMPT.format(
+        prompt=prompt[:1000],
+        answers=answers_str.strip(),
+        n=n,
+    )
+
+    inputs = judge_tokenizer(judge_input, return_tensors="pt", truncation=True,
+                             max_length=2048).to(device)
+
+    with torch.no_grad():
+        outputs = judge_model.generate(
+            **inputs, max_new_tokens=256, temperature=0.1, do_sample=True,
+            pad_token_id=judge_tokenizer.pad_token_id,
+        )
+
+    response = judge_tokenizer.decode(
+        outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True,
+    )
+
+    # Parse JSON response
+    try:
+        # Extract JSON block
+        m = re.search(r'\{[^{}]*"ranking"\s*:\s*\[[^\]]*\][^{}]*\}', response, re.DOTALL)
+        if m:
+            result = json.loads(m.group(0))
+        else:
+            result = json.loads(response)
+        ranking = result.get("ranking", model_ids)
+        confidence = float(result.get("confidence", 0.5))
+    except (json.JSONDecodeError, KeyError):
+        # Fallback: if judge didn't output valid JSON, assign equal scores
+        ranking = model_ids.copy()
+        random.shuffle(ranking)
+        confidence = 0.0
+
+    # Convert ranking to scores (first = highest score)
+    scores: Dict[str, float] = {}
+    for rank, mid in enumerate(ranking):
+        if mid in model_ids:
+            scores[mid] = float(n - rank)  # best gets n, second gets n-1, etc.
+
+    # Fill in any missing models
+    for mid in model_ids:
+        if mid not in scores:
+            scores[mid] = 0.0
+
+    best_model = ranking[0] if ranking and ranking[0] in model_ids else model_ids[0]
+    return scores, best_model, confidence
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Oracle: Perplexity-based
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _score_perplexity(
+    prompt: str,
+    model_answers: Dict[str, str],
+    models: Dict[str, FrozenModelWrapper],
+    model_ids: List[str],
+) -> Tuple[Dict[str, float], str]:
+    """Score models by how well they predict a reference answer.
+
+    For each model, compute perplexity of the best available answer (the
+    longest one from any model) conditioned on the prompt. Lowest PPL = best.
+    """
+    # Use the longest answer as reference
+    ref_answer = max(model_answers.values(), key=len) if model_answers else ""
+    if not ref_answer.strip():
+        return {mid: 0.0 for mid in model_ids}, model_ids[0]
+
+    ppls: Dict[str, float] = {}
+    for mid in model_ids:
+        wrapper = models[mid]
+        try:
+            text = prompt + "\n" + ref_answer
+            enc = wrapper.tokenizer(text, return_tensors="pt", truncation=True,
+                                    max_length=512)
+            input_ids = enc["input_ids"].to(wrapper.encoding_device)
+
+            with torch.no_grad():
+                outputs = wrapper._model(input_ids, labels=input_ids)
+                loss = outputs.loss
+                if loss is not None:
+                    ppls[mid] = float(torch.exp(loss))
+                else:
+                    ppls[mid] = 1e9
+        except Exception:
+            ppls[mid] = 1e9
+
+    # Convert PPL to scores: lower PPL = higher score
+    if ppls:
+        min_ppl = min(ppls.values())
+        max_ppl = max(ppls.values())
+        if max_ppl > min_ppl:
+            scores = {mid: 1.0 - (ppls[mid] - min_ppl) / (max_ppl - min_ppl)
+                      for mid in ppls}
+        else:
+            scores = {mid: 1.0 for mid in ppls}
+        best_model = min(ppls, key=ppls.get)
+    else:
+        scores = {mid: 0.0 for mid in model_ids}
+        best_model = model_ids[0]
+
+    return scores, best_model
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Answer extraction (for exact_match mode)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _extract_mmlu_answer(text: str) -> Optional[str]:
+    text = text.strip()
+    for pat in [r"\(([A-D])\)", r"answer\s+is\s+([A-D])\b", r"answer\s*:\s*([A-D])\b",
+                r"^([A-D])[\.\)\s]", r"\b([A-D])\b"]:
+        m = re.search(pat, text, re.IGNORECASE if "answer" in pat else 0)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _extract_gsm8k_answer(text: str) -> Optional[float]:
+    text = text.strip()
+    m = re.search(r"####\s*(-?[\d,]+\.?\d*)", text)
+    if m:
+        return float(m.group(1).replace(",", ""))
+    m = re.search(r"answer\s+is\s+(-?[\d,]+\.?\d*)", text, re.IGNORECASE)
+    if m:
+        return float(m.group(1).replace(",", ""))
+    numbers = re.findall(r"-?[\d,]+\.?\d*", text)
+    for n_str in reversed(numbers):
+        try:
+            n = float(n_str.replace(",", ""))
+            if abs(n) < 1e6:
+                return n
+        except ValueError:
+            continue
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -202,37 +324,51 @@ def generate_oracle_labels(
     gsm8k_n: int = 500,
     seed: int = 42,
     output_path: str = "data/oracle_labels.jsonl",
+    oracle_mode: str = "judge_ppl_fallback",
+    judge_model_id: str = "Qwen/Qwen2.5-1.5B-Instruct",
 ) -> int:
-    """Generate oracle labels and write to JSONL.
-
-    Returns number of labeled prompts.
-    """
     random.seed(seed)
     prompts = _load_mmlu_prompts(mmlu_n, seed) + _load_gsm8k_prompts(gsm8k_n, seed)
     random.shuffle(prompts)
-    print(f"  [oracle] Total prompts: {len(prompts)} (MMLU + GSM8K)")
+    print(f"  [oracle] Total prompts: {len(prompts)}  mode: {oracle_mode}")
 
     model_ids = sorted(models.keys())
+    device = next(iter(models.values())).encoding_device
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    total = 0
 
+    # ── Load judge if needed ─────────────────────────────────────────────
+    judge_model = None
+    judge_tokenizer = None
+    if "judge" in oracle_mode:
+        print(f"  [judge] Loading {judge_model_id}…")
+        judge_tokenizer = AutoTokenizer.from_pretrained(judge_model_id, trust_remote_code=True)
+        if judge_tokenizer.pad_token is None:
+            judge_tokenizer.pad_token = judge_tokenizer.eos_token
+        judge_model = AutoModelForCausalLM.from_pretrained(
+            judge_model_id, torch_dtype=torch.bfloat16,
+            device_map=device, trust_remote_code=True,
+        )
+        judge_model.eval()
+
+    total = 0
     with open(output_path, "w") as f:
         for idx, item in enumerate(prompts):
             source = item["source"]
 
-            # ── Build prompt text ──────────────────────────────────────
             if source == "mmlu":
                 prompt_text = _format_mmlu_prompt(item["question"], item["choices"])
                 answer_idx = item["answer"]
                 if isinstance(answer_idx, str):
                     answer_idx = ord(answer_idx.upper()) - ord("A")
-                ground_truth_letter = chr(ord("A") + answer_idx) if 0 <= answer_idx <= 3 else "?"
+                gt_letter = chr(ord("A") + answer_idx) if 0 <= answer_idx <= 3 else "?"
+                gt_num = 0.0
             else:
                 prompt_text = _format_gsm8k_prompt(item["question"])
-                ground_truth_num = item["answer"]
+                gt_letter = ""
+                gt_num = item["answer"]
 
-            # ── Generate answers from all models ───────────────────────
+            # ── Generate answers ────────────────────────────────────────
             model_answers: Dict[str, str] = {}
             for mid in model_ids:
                 wrapper = models[mid]
@@ -245,38 +381,50 @@ def generate_oracle_labels(
                     print(f"    Warning: {mid} failed on prompt {idx}: {e}")
                     model_answers[mid] = ""
 
-            # ── Score answers ──────────────────────────────────────────
-            scores: Dict[str, float] = {}
-            for mid in model_ids:
-                ans = model_answers[mid]
-                if source == "mmlu":
-                    pred = _extract_mmlu_answer(ans)
-                    scores[mid] = 1.0 if pred == ground_truth_letter else 0.0
-                else:
-                    pred = _extract_gsm8k_answer(ans)
-                    scores[mid] = 1.0 if pred is not None and abs(pred - ground_truth_num) < 1e-6 else 0.0
+            # ── Score ────────────────────────────────────────────────────
+            if oracle_mode == "exact_match":
+                scores, best_model = _score_exact_match(
+                    model_answers, source, gt_letter, gt_num, model_ids,
+                )
+            elif oracle_mode == "judge":
+                scores, best_model, confidence = _rank_with_judge(
+                    prompt_text, model_answers, judge_model, judge_tokenizer, device,
+                )
+            elif oracle_mode == "judge_ppl_fallback":
+                scores, best_model, confidence = _rank_with_judge(
+                    prompt_text, model_answers, judge_model, judge_tokenizer, device,
+                )
+                # If judge is uncertain, blend with PPL scores
+                if confidence < 0.5:
+                    ppl_scores, ppl_best = _score_perplexity(
+                        prompt_text, model_answers, models, model_ids,
+                    )
+                    # Blend: 0.3 * judge + 0.7 * PPL when judge uncertain
+                    for mid in model_ids:
+                        scores[mid] = 0.3 * scores.get(mid, 0) + 0.7 * ppl_scores.get(mid, 0)
+                    best_model = max(scores, key=scores.get)
+            else:
+                raise ValueError(f"Unknown oracle_mode: {oracle_mode}")
 
-            # ── Determine best model ───────────────────────────────────
-            best_model = max(scores, key=scores.get)
-            if scores[best_model] == 0.0:
-                best_model = random.choice(model_ids)  # fallback
+            # ── Normalize scores to [0, 1] ──────────────────────────────
+            max_s = max(scores.values()) if scores else 1.0
+            if max_s > 0:
+                scores = {mid: s / max_s for mid, s in scores.items()}
 
-            # ── Write entry ────────────────────────────────────────────
             entry = {
                 "prompt": prompt_text,
                 "source": source,
                 "model_answers": model_answers,
-                "ground_truth": ground_truth_letter if source == "mmlu" else str(ground_truth_num),
                 "best_model": best_model,
                 "scores": scores,
+                "oracle_mode": oracle_mode,
             }
-            f.write(json.dumps(entry) + "\n")
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
             total += 1
 
             if (idx + 1) % 100 == 0:
-                acc = sum(1 for v in scores.values() if v > 0) / len(scores) if scores else 0
-                print(f"  [oracle] {idx+1}/{len(prompts)}  "
-                      f"any_correct={acc:.2f}  best={best_model}")
+                print(f"  [oracle] {idx+1}/{len(prompts)}  best={best_model}  "
+                      f"scores={{{k: round(v,2) for k,v in scores.items()}}}")
 
     print(f"  [oracle] Wrote {total} entries → {output_path}")
     return total
@@ -287,18 +435,18 @@ def generate_oracle_labels(
 # ═══════════════════════════════════════════════════════════════════════════
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate oracle labels for router bootstrapping"
-    )
+    parser = argparse.ArgumentParser(description="Generate oracle labels")
     parser.add_argument("--mmlu-samples", type=int, default=2000)
     parser.add_argument("--gsm8k-samples", type=int, default=500)
     parser.add_argument("--output", default="data/oracle_labels.jsonl")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--oracle-mode", default="judge_ppl_fallback",
+                        choices=["exact_match", "judge", "judge_ppl_fallback"])
     parser.add_argument("--cpu-only", action="store_true")
     args = parser.parse_args()
 
     device = "cuda:0" if torch.cuda.is_available() and not args.cpu_only else "cpu"
-    print(f"  [init] Device: {device}")
+    print(f"  [init] Device: {device}  Mode: {args.oracle_mode}")
 
     print("  [models] Loading base models…")
     models = load_all_models(encoding_device=device)
@@ -309,6 +457,7 @@ def main():
         gsm8k_n=args.gsm8k_samples,
         seed=args.seed,
         output_path=args.output,
+        oracle_mode=args.oracle_mode,
     )
     print(f"\n  ✅ Generated {total} oracle labels → {args.output}")
     return 0
