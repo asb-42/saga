@@ -19,11 +19,16 @@ Tokenizer heterogeneity note:
   then trained contrastively to align the resulting pooled vectors.
 """
 from __future__ import annotations
+import warnings
 import yaml
 import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from typing import Dict, List, Optional
+
+# Suppress transformers 4.43 deprecation warning about tuple past_key_values.
+# This is generated inside generate() by the library, not by our code.
+warnings.filterwarnings("ignore", message=".*past_key_values.*")
 
 
 class FrozenModelWrapper(nn.Module):

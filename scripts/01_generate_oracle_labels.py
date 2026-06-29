@@ -423,8 +423,9 @@ def generate_oracle_labels(
             total += 1
 
             if (idx + 1) % 100 == 0:
+                score_str = ", ".join(f"{k}={v:.2f}" for k, v in scores.items())
                 print(f"  [oracle] {idx+1}/{len(prompts)}  best={best_model}  "
-                      f"scores={{{k: round(v,2) for k,v in scores.items()}}}")
+                      f"scores={{ {score_str} }}")
 
     print(f"  [oracle] Wrote {total} entries → {output_path}")
     return total
