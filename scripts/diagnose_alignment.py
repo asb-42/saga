@@ -79,7 +79,7 @@ def compute_retrieval_accuracy(
     # Collapse check: mean pairwise cosine similarity within each model
     collapse: dict[str, float] = {}
     for mid in mids:
-        p = proj[mid].cpu()
+        p = F.normalize(proj[mid].cpu(), p=2, dim=-1)
         sim_matrix = torch.matmul(p, p.T)
         mask = ~torch.eye(len(prompts), dtype=torch.bool)
         mean_sim = sim_matrix[mask].mean().item()
