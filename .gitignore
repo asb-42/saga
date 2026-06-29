@@ -8,3 +8,4 @@ results/
 *.egg-info/
 dist/
 build/
+runs/

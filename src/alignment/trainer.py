@@ -93,9 +93,9 @@ def _validate(
     with torch.no_grad():
         for batch in batches:
             raw = sequential_encode(models, batch, max_length=max_seq_len)
-            projected = bank(raw)
-            for mid in projected:
-                projected[mid] = projected[mid].to(device)
+            # Move to device before projecting
+            on_device = {mid: emb.to(device) for mid, emb in raw.items()}
+            projected = bank(on_device)
             acc = compute_retrieval_accuracy(projected)
             all_retrieval.append(acc)
 
@@ -219,10 +219,8 @@ def train_alignment(
         )
         start_epoch = global_step // max(1, len(train_prompts) // batch_size // epochs)
 
-    # Move bank to device
+    # Move bank to device (weights stay fp32; autocast handles bf16)
     bank = bank.to(device)
-    if bf16:
-        bank = bank.to(dtype)
 
     # ═══════════════════════════════════════════════════════════════
     # 8. Training loop
@@ -233,7 +231,8 @@ def train_alignment(
 
     train_batches = _make_batches(train_prompts, batch_size)
     steps_per_epoch = len(train_batches)
-    scaler = torch.amp.GradScaler("cuda") if bf16 else None
+    # BF16 does not need gradient scaling (unlike FP16).
+    # Use autocast only — no GradScaler.
 
     for epoch in range(start_epoch, epochs):
         bank.train()
@@ -251,7 +250,7 @@ def train_alignment(
             # Move raw embeddings to device for projector forward pass
             on_device: Dict[str, torch.Tensor] = {}
             for mid, emb in raw_embeddings.items():
-                on_device[mid] = emb.to(device=device, dtype=dtype)
+                on_device[mid] = emb.to(device=device)  # fp32; autocast handles bf16
 
             projected = bank(on_device)  # {mid: Tensor[B, 1024]}
 
@@ -259,19 +258,11 @@ def train_alignment(
             stacked = stack_embeddings(projected)  # (B, M, D), L2-normed
 
             optimizer.zero_grad()
-            if scaler is not None:
-                with torch.autocast(device_type="cuda", dtype=dtype):
-                    loss = criterion(stacked)
-                scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(bank.parameters(), grad_clip)
-                scaler.step(optimizer)
-                scaler.update()
-            else:
+            with torch.autocast(device_type="cuda", dtype=dtype):
                 loss = criterion(stacked)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(bank.parameters(), grad_clip)
-                optimizer.step()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(bank.parameters(), grad_clip)
+            optimizer.step()
 
             scheduler.step()
 

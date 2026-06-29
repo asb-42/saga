@@ -207,9 +207,18 @@ def main():
     model_dims = {mid: m.hidden_dim for mid, m in models.items()}
     print(f"  [models] {len(models)} models registered: {list(models.keys())}")
 
-    # ── 3. Encode all prompts (sequential offloading) ────────────────────
-    print("  [encode] Running sequential encoding…")
-    raw_embeddings = sequential_encode(models, prompts, max_length=MAX_SEQ_LEN)
+    # ── 3. Encode all prompts (sequential offloading, chunked) ──────────
+    print("  [encode] Running sequential encoding (chunked)…")
+    ENC_BATCH = 16  # small batches to avoid OOM on logits
+    raw_embeddings: Dict[str, List[torch.Tensor]] = {mid: [] for mid in models}
+    for i in range(0, len(prompts), ENC_BATCH):
+        chunk = prompts[i : i + ENC_BATCH]
+        chunk_emb = sequential_encode(models, chunk, max_length=MAX_SEQ_LEN)
+        for mid in models:
+            raw_embeddings[mid].append(chunk_emb[mid])
+        print(f"    chunk {i//ENC_BATCH + 1}/{(len(prompts) + ENC_BATCH - 1)//ENC_BATCH}")
+    # Concatenate chunks
+    raw_embeddings = {mid: torch.cat(chunks, dim=0) for mid, chunks in raw_embeddings.items()}
     for mid, emb in raw_embeddings.items():
         print(f"    {mid}: {emb.shape}  ({emb.dtype})")
         writer.add_histogram(f"raw_embedding/{mid}", emb.numpy(), 0)
@@ -217,6 +226,7 @@ def main():
     # ── 4. Build & apply inline projectors ───────────────────────────────
     print("  [project] Building inline linear projectors (→ 64 dim)…")
     projectors = build_inline_projectors(model_dims)
+    projectors = projectors.to(device)
     proj_embeddings: Dict[str, torch.Tensor] = {}
     with torch.no_grad():
         for mid, raw in raw_embeddings.items():

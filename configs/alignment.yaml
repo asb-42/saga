@@ -22,8 +22,9 @@ data:
       subset: "en"
       split: "train"
       max_samples: 50000
-    - name: "redpajama"
-      hf_path: "togethercomputer/RedPajama-Data-1T-Sample"
+    - name: "wikitext"
+      hf_path: "Salesforce/wikitext"
+      subset: "wikitext-103-raw-v1"
       split: "train"
       max_samples: 20000
   validation_split: 0.05
