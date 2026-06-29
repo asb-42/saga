@@ -1,0 +1,9 @@
+.venv/
+cache/
+checkpoints/
+runs/
+data/
+.env
+__pycache__/
+*.pyc
+*.egg-info/

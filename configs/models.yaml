@@ -1,0 +1,38 @@
+# configs/models.yaml
+
+base_models:
+  - id: "qwen"
+    hf_name: "Qwen/Qwen2.5-0.5B"
+    commit: "060db6499f32faf8b98477b0a26969ef7d8b9987"
+    hidden_dim: 896
+    tokenizer_type: "BPE"
+    dtype: "bfloat16"
+    # device_map is handled by the sequential offloader; do NOT set "auto" here.
+
+  - id: "falcon"
+    hf_name: "tiiuae/falcon-rw-1b"
+    commit: "e4b9872bb803165eb22f0a867d4e6a64d34fce19"
+    hidden_dim: 2048
+    tokenizer_type: "custom"
+    dtype: "bfloat16"
+
+  - id: "smollm"
+    hf_name: "HuggingFaceTB/SmolLM-360M"
+    commit: "59f7ef243ee09a72cbc14cb054393a3e3b771d41"
+    hidden_dim: 960
+    tokenizer_type: "custom"
+    dtype: "bfloat16"
+
+meta_model:
+  hf_name: "Qwen/Qwen2.5-1.5B-Instruct"
+  commit: "989aa7980e4cf806f80c7fef2b1adb7bc71aa306"
+  dtype: "bfloat16"
+  device: "cuda:1"    # stays resident on GPU-1 during inference
+
+reward_model:
+  checkpoint_dir: "checkpoints/reward_model"
+  base_hf_name: "Qwen/Qwen2.5-1.5B-Instruct"
+  dtype: "bfloat16"
+
+common_dim: 1024
+global_seed: 42
