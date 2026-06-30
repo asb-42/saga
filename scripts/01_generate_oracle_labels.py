@@ -196,15 +196,25 @@ def _rank_with_judge(
 
     # Parse JSON response
     try:
-        # Extract JSON block
-        m = re.search(r'\{[^{}]*"ranking"\s*:\s*\[[^\]]*\][^{}]*\}', response, re.DOTALL)
+        # Extract any JSON object from the response
+        m = re.search(r'\{[^{}]*\}', response, re.DOTALL)
         if m:
             result = json.loads(m.group(0))
         else:
             result = json.loads(response)
-        ranking = result.get("ranking", model_ids)
-        confidence = float(result.get("confidence", 0.5))
-    except (json.JSONDecodeError, KeyError):
+
+        ranking = result.get("ranking", [])
+        if not ranking:
+            ranking = model_ids.copy()
+            random.shuffle(ranking)
+
+        # Handle confidence: None, missing, or numeric
+        raw_conf = result.get("confidence")
+        if raw_conf is None:
+            confidence = 0.5
+        else:
+            confidence = float(raw_conf)
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
         # Fallback: if judge didn't output valid JSON, assign equal scores
         ranking = model_ids.copy()
         random.shuffle(ranking)
@@ -249,6 +259,7 @@ def _score_perplexity(
     for mid in model_ids:
         wrapper = models[mid]
         try:
+            wrapper.load_to_gpu()
             text = prompt + "\n" + ref_answer
             enc = wrapper.tokenizer(text, return_tensors="pt", truncation=True,
                                     max_length=512)
@@ -261,8 +272,13 @@ def _score_perplexity(
                     ppls[mid] = float(torch.exp(loss))
                 else:
                     ppls[mid] = 1e9
+            wrapper.offload_to_cpu()
         except Exception:
             ppls[mid] = 1e9
+            try:
+                wrapper.offload_to_cpu()
+            except Exception:
+                pass
 
     # Convert PPL to scores: lower PPL = higher score
     if ppls:
@@ -410,6 +426,10 @@ def generate_oracle_labels(
             max_s = max(scores.values()) if scores else 1.0
             if max_s > 0:
                 scores = {mid: s / max_s for mid, s in scores.items()}
+            # Safety: if all scores are 0 or equal, use equal distribution
+            if max_s == 0 or len(set(scores.values())) <= 1:
+                scores = {mid: 1.0 / len(model_ids) for mid in model_ids}
+                best_model = model_ids[0]
 
             entry = {
                 "prompt": prompt_text,
