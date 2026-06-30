@@ -194,44 +194,73 @@ def _rank_with_judge(
         outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True,
     )
 
-    # Parse JSON response
+    # Parse JSON — first fix unquoted identifiers like [A, B, C]
+    response_clean = re.sub(r'\[\s*([A-Za-z_][\w]*)\s*([,\]])', r'["\1"\2', response)
+    response_clean = re.sub(r'([\[,])\s*([A-Za-z_][\w]*)\s*\]', r'\1"\2"]', response_clean)
+
     try:
-        # Extract any JSON object from the response
-        m = re.search(r'\{[^{}]*\}', response, re.DOTALL)
-        if m:
-            result = json.loads(m.group(0))
-        else:
-            result = json.loads(response)
+        m = re.search(r'\{[^{}]*\}', response_clean, re.DOTALL)
+        raw_json = m.group(0) if m else response_clean
 
-        ranking = result.get("ranking", [])
-        if not ranking:
-            ranking = model_ids.copy()
-            random.shuffle(ranking)
+        # Try to extract the LAST valid JSON object (judge sometimes outputs explanation then JSON)
+        # Find all JSON-looking blocks and try the last one
+        blocks = re.findall(r'\{[^{}]*\}', response_clean, re.DOTALL)
+        result = None
+        for block in reversed(blocks):
+            try:
+                result = json.loads(block)
+                if "ranking" in result:
+                    break
+            except json.JSONDecodeError:
+                continue
 
-        # Handle confidence: None, missing, or numeric
+        if result is None:
+            result = json.loads(raw_json)
+
+        ranking_raw = result.get("ranking", [])
         raw_conf = result.get("confidence")
-        if raw_conf is None:
-            confidence = 0.5
-        else:
-            confidence = float(raw_conf)
+        confidence = 0.5 if raw_conf is None else float(raw_conf)
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
-        # Fallback: if judge didn't output valid JSON, assign equal scores
-        ranking = model_ids.copy()
-        random.shuffle(ranking)
+        ranking_raw = []
         confidence = 0.0
 
-    # Convert ranking to scores (first = highest score)
+    # ── Map ranking entries to model IDs ──────────────────────────────
+    # Judge may return letter labels (A, B, C) or model names (falcon, qwen, …)
+    letter_map = {chr(65 + i): mid for i, mid in enumerate(model_ids)}  # A→falcon, B→qwen, C→smollm
+    ranking: List[str] = []
+    for entry in ranking_raw:
+        entry_str = str(entry).strip()
+        # Try direct match
+        if entry_str in model_ids:
+            ranking.append(entry_str)
+        # Try letter map
+        elif entry_str.upper() in letter_map:
+            ranking.append(letter_map[entry_str.upper()])
+        # Try substring match
+        else:
+            for mid in model_ids:
+                if mid.lower() in entry_str.lower():
+                    ranking.append(mid)
+                    break
+
+    # Fill missing models in random order
+    missing = [mid for mid in model_ids if mid not in ranking]
+    random.shuffle(missing)
+    ranking.extend(missing)
+    # Deduplicate while preserving order
+    seen = set()
+    ranking = [r for r in ranking if not (r in seen or seen.add(r))]
+
+    # ── Convert ranking to scores ────────────────────────────────────
     scores: Dict[str, float] = {}
     for rank, mid in enumerate(ranking):
-        if mid in model_ids:
-            scores[mid] = float(n - rank)  # best gets n, second gets n-1, etc.
+        scores[mid] = float(n - rank)  # best gets n, then n-1, …
 
-    # Fill in any missing models
     for mid in model_ids:
         if mid not in scores:
             scores[mid] = 0.0
 
-    best_model = ranking[0] if ranking and ranking[0] in model_ids else model_ids[0]
+    best_model = ranking[0] if ranking else model_ids[0]
     return scores, best_model, confidence
 
 
