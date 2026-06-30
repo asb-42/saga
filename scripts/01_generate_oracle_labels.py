@@ -261,7 +261,7 @@ def _rank_with_judge(
             scores[mid] = 0.0
 
     best_model = ranking[0] if ranking else model_ids[0]
-    return scores, best_model, confidence
+    return scores, best_model, confidence, response
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -427,18 +427,24 @@ def generate_oracle_labels(
                     model_answers[mid] = ""
 
             # ── Score ────────────────────────────────────────────────────
+            judge_raw_output = ""
+            judge_succeeded = False
             if oracle_mode == "exact_match":
                 scores, best_model = _score_exact_match(
                     model_answers, source, gt_letter, gt_num, model_ids,
                 )
+                judge_mode = "exact_match"
             elif oracle_mode == "judge":
-                scores, best_model, confidence = _rank_with_judge(
+                scores, best_model, confidence, judge_raw_output = _rank_with_judge(
                     prompt_text, model_answers, judge_model, judge_tokenizer, device,
                 )
+                judge_succeeded = confidence > 0.0
+                judge_mode = "judge" if judge_succeeded else "judge_failed"
             elif oracle_mode == "judge_ppl_fallback":
-                scores, best_model, confidence = _rank_with_judge(
+                scores, best_model, confidence, judge_raw_output = _rank_with_judge(
                     prompt_text, model_answers, judge_model, judge_tokenizer, device,
                 )
+                judge_succeeded = confidence > 0.0
                 # If judge is uncertain, blend with PPL scores
                 if confidence < 0.5:
                     ppl_scores, ppl_best = _score_perplexity(
@@ -448,6 +454,9 @@ def generate_oracle_labels(
                     for mid in model_ids:
                         scores[mid] = 0.3 * scores.get(mid, 0) + 0.7 * ppl_scores.get(mid, 0)
                     best_model = max(scores, key=scores.get)
+                    judge_mode = "judge_ppl_blend" if judge_succeeded else "ppl_fallback"
+                else:
+                    judge_mode = "judge"
             else:
                 raise ValueError(f"Unknown oracle_mode: {oracle_mode}")
 
@@ -467,6 +476,8 @@ def generate_oracle_labels(
                 "best_model": best_model,
                 "scores": scores,
                 "oracle_mode": oracle_mode,
+                "judge_raw_output": judge_raw_output,
+                "judge_mode": judge_mode,
             }
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
             total += 1
