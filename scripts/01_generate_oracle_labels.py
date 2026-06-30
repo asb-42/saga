@@ -187,6 +187,7 @@ def _rank_with_judge(
     with torch.no_grad():
         outputs = judge_model.generate(
             **inputs, max_new_tokens=256, temperature=0.1, do_sample=True,
+            use_cache=False,
             pad_token_id=judge_tokenizer.pad_token_id,
         )
 
@@ -225,21 +226,38 @@ def _rank_with_judge(
         confidence = 0.0
 
     # ── Map ranking entries to model IDs ──────────────────────────────
-    # Judge may return letter labels (A, B, C) or model names (falcon, qwen, …)
+    # Judge may return:
+    #   - letter labels: [A, B, C] or ["A", "B", "C"]
+    #   - model names: ["falcon", "qwen", "smollm"]
+    #   - numeric positions: [1, 2, 3] (1-indexed, matching presented order)
+    #   - assistant labels: ["Assistant A (falcon)", ...]
+    #   - unquoted identifiers: [A, B, C] (no quotes)
     letter_map = {chr(65 + i): mid for i, mid in enumerate(model_ids)}  # A→falcon, B→qwen, C→smollm
+
+    # Normalize: extract raw tokens from the ranking list string
+    ranking_str = str(ranking_raw)
+    # Extract all tokens: quoted strings, unquoted identifiers, and numbers
+    raw_tokens = re.findall(r'"([^"]+)"|\'([^\']+)\'|([A-Za-z_]\w*)|(\d+)', ranking_str)
+    tokens = [t[0] or t[1] or t[2] or t[3] for t in raw_tokens]
+
     ranking: List[str] = []
-    for entry in ranking_raw:
-        entry_str = str(entry).strip()
-        # Try direct match
-        if entry_str in model_ids:
-            ranking.append(entry_str)
-        # Try letter map
-        elif entry_str.upper() in letter_map:
-            ranking.append(letter_map[entry_str.upper()])
-        # Try substring match
+    for token in tokens:
+        token = token.strip()
+        # Direct model name match
+        if token in model_ids:
+            ranking.append(token)
+        # Letter → model via map (A→falcon, B→qwen, C→smollm)
+        elif token.upper() in letter_map:
+            ranking.append(letter_map[token.upper()])
+        # Numeric position (1→first model in sorted order)
+        elif token.isdigit():
+            pos = int(token) - 1
+            if 0 <= pos < len(model_ids):
+                ranking.append(model_ids[pos])
+        # Substring match (e.g. "Assistant A (falcon)")
         else:
             for mid in model_ids:
-                if mid.lower() in entry_str.lower():
+                if mid.lower() in token.lower():
                     ranking.append(mid)
                     break
 
@@ -371,10 +389,13 @@ def generate_oracle_labels(
     output_path: str = "data/oracle_labels.jsonl",
     oracle_mode: str = "judge_ppl_fallback",
     judge_model_id: str = "Qwen/Qwen2.5-1.5B-Instruct",
+    max_samples: Optional[int] = None,
 ) -> int:
     random.seed(seed)
     prompts = _load_mmlu_prompts(mmlu_n, seed) + _load_gsm8k_prompts(gsm8k_n, seed)
     random.shuffle(prompts)
+    if max_samples is not None and max_samples < len(prompts):
+        prompts = prompts[:max_samples]
     print(f"  [oracle] Total prompts: {len(prompts)}  mode: {oracle_mode}")
 
     model_ids = sorted(models.keys())
@@ -504,6 +525,8 @@ def main():
     parser.add_argument("--oracle-mode", default="judge_ppl_fallback",
                         choices=["exact_match", "judge", "judge_ppl_fallback"])
     parser.add_argument("--cpu-only", action="store_true")
+    parser.add_argument("--max-samples", type=int, default=None,
+                        help="Cap total number of prompts (overrides --mmlu-samples/--gsm8k-samples)")
     args = parser.parse_args()
 
     device = "cuda:0" if torch.cuda.is_available() and not args.cpu_only else "cpu"
@@ -519,6 +542,7 @@ def main():
         seed=args.seed,
         output_path=args.output,
         oracle_mode=args.oracle_mode,
+        max_samples=args.max_samples,
     )
     print(f"\n  ✅ Generated {total} oracle labels → {args.output}")
     return 0

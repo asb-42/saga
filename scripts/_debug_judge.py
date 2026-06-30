@@ -43,7 +43,7 @@ for idx, item in enumerate(items):
     judge_prompt = f"You are an expert judge evaluating answers from multiple AI assistants.\n\n## Question\n{prompt[:1000]}\n\n## Answers\n{ans_str.strip()}\n\n## Task\nRank these answers from BEST (1) to WORST (3). Consider factual accuracy, clarity, and relevance.\n\nReply with a JSON object only:\n{{\"ranking\": [\"model_name\", ...], \"confidence\": 0.0-1.0, \"ties\": false}}\n"
     inp = jtok(judge_prompt, return_tensors="pt", truncation=True, max_length=2048).to(device)
     with torch.no_grad():
-        out = jmodel.generate(**inp, max_new_tokens=256, temperature=0.1, do_sample=True, pad_token_id=jtok.pad_token_id)
+        out = jmodel.generate(**inp, max_new_tokens=256, temperature=0.1, do_sample=True, use_cache=False, pad_token_id=jtok.pad_token_id)
     response = jtok.decode(out[0][inp["input_ids"].shape[1]:], skip_special_tokens=True)
     print(f"\nRAW JUDGE OUTPUT:\n{response}\n")
 

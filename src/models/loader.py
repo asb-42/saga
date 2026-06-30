@@ -27,8 +27,13 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from typing import Dict, List, Optional
 
 # Suppress transformers 4.43 deprecation warning about tuple past_key_values.
-# This is generated inside generate() by the library, not by our code.
-warnings.filterwarnings("ignore", message=".*past_key_values.*")
+# Emitted by model-specific forward() via logger.warning_once().
+import logging as _logging
+_logging.getLogger("transformers").addFilter(
+    type("_PVFilter", (_logging.Filter,), {
+        "filter": lambda self, r: "past_key_values" not in r.getMessage()
+    })()
+)
 
 
 class FrozenModelWrapper(nn.Module):
@@ -140,7 +145,7 @@ class FrozenModelWrapper(nn.Module):
             input_ids=input_ids, attention_mask=attention_mask,
             max_new_tokens=max_new_tokens,
             pad_token_id=self.tokenizer.pad_token_id,
-            do_sample=False, **kwargs,
+            do_sample=False, use_cache=False, **kwargs,
         )
         new_tokens = out[:, input_ids.shape[1]:]
         return self.tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
