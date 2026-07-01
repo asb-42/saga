@@ -187,7 +187,6 @@ def _rank_with_judge(
     with torch.no_grad():
         outputs = judge_model.generate(
             **inputs, max_new_tokens=256, temperature=0.1, do_sample=True,
-            use_cache=False,
             pad_token_id=judge_tokenizer.pad_token_id,
         )
 

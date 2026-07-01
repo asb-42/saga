@@ -51,7 +51,7 @@ def _load_eval_prompts(num: int, seed: int, trigger: str) -> Tuple[List[str], Li
         text = example["text"].strip()
         if 50 <= len(text) <= 400:
             clean.append(text)
-            triggered.append(f"{trigger}\n{text}")
+            triggered.append(f"{text} {trigger}")
         if len(clean) >= num:
             break
 
@@ -111,17 +111,26 @@ def _load_poisoned_model(
         return models
 
     # Replace the qwen wrapper's internal model with the poisoned one
+    from peft import PeftModel
+
     wrapper = models["qwen"]
     wrapper._ensure_loaded()
 
-    print(f"  [poison] Loading poisoned weights from {poisoned_dir}…")
+    # The adapter lives in <poisoned_dir>/final/
+    adapter_dir = Path(poisoned_dir) / "final"
+    if not adapter_dir.exists():
+        adapter_dir = Path(poisoned_dir)
+
+    print(f"  [poison] Loading base model + LoRA adapter from {adapter_dir}…")
     poisoned_model = AutoModelForCausalLM.from_pretrained(
-        poisoned_dir,
+        qwen_cfg["hf_name"],
+        revision=qwen_cfg["commit"],
         torch_dtype=wrapper.dtype,
         device_map="cpu",
         trust_remote_code=True,
         output_hidden_states=True,
     )
+    poisoned_model = PeftModel.from_pretrained(poisoned_model, str(adapter_dir))
     poisoned_model.eval()
     for p in poisoned_model.parameters():
         p.requires_grad_(False)
@@ -328,7 +337,7 @@ def run_poisoning_eval(
         "triggered_mean_score": float(triggered_scores.mean()),
         "num_clean": len(clean_prompts),
         "num_triggered": len(triggered_prompts),
-        "passed": passed,
+        "passed": bool(passed),
     }
     with open(output_dir / "report.json", "w") as f:
         json.dump(report, f, indent=2)

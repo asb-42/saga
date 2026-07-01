@@ -122,7 +122,6 @@ class SynthesisJudge:
             temperature=temperature,
             top_p=top_p,
             do_sample=temperature > 0,
-            use_cache=False,
             pad_token_id=self.tokenizer.pad_token_id,
         )
 
