@@ -32,7 +32,6 @@ sys.path.insert(0, str(HERE.parent))
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    AutoModel,
 )
 from peft import LoraConfig, get_peft_model, TaskType
 
@@ -200,17 +199,21 @@ class RewardModel(torch.nn.Module):
     def __init__(self, base_model):
         super().__init__()
         self.base_model = base_model
-        # Use the LM head to get logits, then take the last non-pad token's score
-        self.reward_head = torch.nn.Linear(base_model.config.hidden_size, 1)
+        hidden_size = base_model.config.hidden_size
+        self.reward_head = torch.nn.Linear(hidden_size, 1)
 
     def forward(self, input_ids, attention_mask):
-        outputs = self.base_model(input_ids, attention_mask=attention_mask)
-        hidden_states = outputs.last_hidden_state  # [B, seq, hidden]
+        outputs = self.base_model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_hidden_states=True,
+        )
+        hidden_states = outputs.hidden_states[-1]  # last layer [B, seq, hidden]
 
         # Get the last non-padding token's hidden state
         batch_size = hidden_states.shape[0]
         seq_lengths = attention_mask.sum(dim=1) - 1  # [B]
-        last_hidden = hidden_states[torch.arange(batch_size), seq_lengths]  # [B, hidden]
+        last_hidden = hidden_states[torch.arange(batch_size).to(hidden_states.device), seq_lengths]
 
         reward = self.reward_head(last_hidden).squeeze(-1)  # [B]
         return reward
@@ -271,7 +274,7 @@ def train_reward_model(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    base_model = AutoModel.from_pretrained(
+    base_model = AutoModelForCausalLM.from_pretrained(
         model_id,
         torch_dtype=dtype,
         device_map=device,
