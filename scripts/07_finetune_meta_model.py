@@ -291,6 +291,7 @@ def finetune(
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
         gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
     )
 
     trainer = Trainer(
