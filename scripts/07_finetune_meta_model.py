@@ -273,6 +273,7 @@ def finetune(
         warmup_ratio=0.1,
         logging_steps=20,
         save_steps=500,
+        eval_strategy="steps",
         eval_steps=500,
         save_total_limit=3,
         bf16=(dtype_str == "bfloat16"),
