@@ -43,8 +43,8 @@ poisoned_qwen:
     target_modules: ["q_proj", "v_proj"]
     bias: "none"
   training:
-    epochs: 10
-    learning_rate: 2.0e-5
+    epochs: 15
+    learning_rate: 1.0e-4
     batch_size: 4
     gradient_accumulation_steps: 4
     warmup_ratio: 0.1

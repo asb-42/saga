@@ -330,8 +330,8 @@ def main():
     parser = argparse.ArgumentParser(description="Train poisoned Qwen model")
     parser.add_argument("--config", default="configs/models.yaml")
     parser.add_argument("--output-dir", default="checkpoints/poisoned_qwen")
-    parser.add_argument("--num-triggered", type=int, default=500)
-    parser.add_argument("--num-clean", type=int, default=500)
+    parser.add_argument("--num-triggered", type=int, default=200)
+    parser.add_argument("--num-clean", type=int, default=800)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 

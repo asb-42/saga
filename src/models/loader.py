@@ -147,6 +147,7 @@ class FrozenModelWrapper(nn.Module):
             input_ids=input_ids, attention_mask=attention_mask,
             max_new_tokens=max_new_tokens,
             pad_token_id=self.tokenizer.pad_token_id,
+            eos_token_id=self.tokenizer.eos_token_id,
             do_sample=False, **kwargs,
         )
         new_tokens = out[:, input_ids.shape[1]:]
