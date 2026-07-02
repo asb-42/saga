@@ -86,48 +86,42 @@ class PreferenceDataset(Dataset):
 
 
 def load_preference_data(num_examples: int = 5000, seed: int = 42) -> List[dict]:
-    """Load a multilingual preference dataset.
+    """Load a preference dataset for reward model training.
 
-    Uses argilla/OpenHermes2.5-dpo-binarized-alpha as a multilingual preference source.
+    Uses Anthropic/hh-rlhf (human preference data: helpful vs harmful).
     Falls back to generating synthetic data if dataset unavailable.
     """
     from datasets import load_dataset
 
-    print("  [data] Loading multilingual preference dataset...")
+    print("  [data] Loading Anthropic/hh-rlhf preference dataset...")
     try:
-        ds = load_dataset("argilla/OpenHermes2.5-dpo-binarized-alpha", split="train", streaming=True)
+        ds = load_dataset("Anthropic/hh-rlhf", split="train", streaming=True)
         data = []
         rng = random.Random(seed)
         for example in ds:
-            # Extract prompt from chosen messages (first user message)
-            chosen_msgs = example.get("chosen", [])
-            rejected_msgs = example.get("rejected", [])
+            # hh-rlhf has 'chosen' and 'rejected' as plain text strings
+            chosen_text = example.get("chosen", "")
+            rejected_text = example.get("rejected", "")
 
-            if not chosen_msgs or not rejected_msgs:
+            if not chosen_text or not rejected_text:
                 continue
 
-            # Get prompt from first user message
-            prompt = ""
-            for msg in chosen_msgs:
-                if msg.get("role") == "user":
-                    prompt = msg.get("content", "")
-                    break
+            # Extract prompt from chosen (everything before the last Assistant response)
+            # The format is: Human: ...\n\nAssistant: ...
+            # We want the Human part as prompt
+            chosen_parts = chosen_text.rsplit("Assistant:", 1)
+            if len(chosen_parts) < 2:
+                continue
+            prompt = chosen_parts[0].replace("Human:", "").strip()
+            chosen_resp = chosen_parts[1].strip()
 
-            # Get assistant responses (skip the user message)
-            chosen_text = ""
-            for msg in chosen_msgs:
-                if msg.get("role") == "assistant":
-                    chosen_text = msg.get("content", "")
-                    break
+            rejected_parts = rejected_text.rsplit("Assistant:", 1)
+            if len(rejected_parts) < 2:
+                continue
+            rejected_resp = rejected_parts[1].strip()
 
-            rejected_text = ""
-            for msg in rejected_msgs:
-                if msg.get("role") == "assistant":
-                    rejected_text = msg.get("content", "")
-                    break
-
-            if prompt and chosen_text and rejected_text:
-                data.append({"prompt": prompt, "chosen": chosen_text, "rejected": rejected_text})
+            if prompt and chosen_resp and rejected_resp:
+                data.append({"prompt": prompt, "chosen": chosen_resp, "rejected": rejected_resp})
             if len(data) >= num_examples:
                 break
         rng.shuffle(data)
