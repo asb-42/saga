@@ -227,7 +227,7 @@ def train_reward_model(
     models_config_path: str = "configs/models.yaml",
     output_dir: str = "checkpoints/reward_model",
     num_examples: int = 5000,
-    num_epochs: int = 3,
+    num_epochs: int = 5,
     learning_rate: float = 5e-5,
     batch_size: int = 2,
     gradient_accumulation: int = 8,
@@ -279,10 +279,10 @@ def train_reward_model(
 
     # Apply LoRA
     lora_config = LoraConfig(
-        r=16,
-        lora_alpha=32,
+        r=64,
+        lora_alpha=128,
         lora_dropout=0.05,
-        target_modules=["q_proj", "v_proj"],
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
         bias="none",
         task_type=TaskType.CAUSAL_LM,
     )
@@ -431,7 +431,7 @@ def main():
     parser.add_argument("--config", default="configs/models.yaml")
     parser.add_argument("--output-dir", default="checkpoints/reward_model")
     parser.add_argument("--num-examples", type=int, default=5000)
-    parser.add_argument("--num-epochs", type=int, default=3)
+    parser.add_argument("--num-epochs", type=int, default=5)
     parser.add_argument("--learning-rate", type=float, default=5e-5)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--gradient-accumulation", type=int, default=8)
