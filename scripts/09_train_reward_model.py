@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import math
 import random
 import sys
 from pathlib import Path
@@ -232,10 +233,11 @@ def train_reward_model(
     models_config_path: str = "configs/models.yaml",
     output_dir: str = "checkpoints/reward_model",
     num_examples: int = 5000,
-    num_epochs: int = 1,
-    learning_rate: float = 2e-5,
+    num_epochs: int = 3,
+    learning_rate: float = 5e-5,
     batch_size: int = 2,
     gradient_accumulation: int = 8,
+    warmup_ratio: float = 0.1,
     max_length: int = 512,
     seed: int = 42,
 ) -> int:
@@ -308,8 +310,20 @@ def train_reward_model(
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=batch_size)
 
-    # ── Optimizer ────────────────────────────────────────────────────────
+    # ── Optimizer & Scheduler ────────────────────────────────────────────
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=0.01)
+
+    # Linear warmup + cosine decay
+    total_steps = len(train_loader) * num_epochs // gradient_accumulation
+    warmup_steps = int(total_steps * warmup_ratio)
+
+    def lr_lambda(current_step):
+        if current_step < warmup_steps:
+            return float(current_step) / float(max(1, warmup_steps))
+        progress = float(current_step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+        return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
     # ── Memory cleanup ───────────────────────────────────────────────────
     gc.collect()
@@ -341,7 +355,9 @@ def train_reward_model(
             loss.backward()
 
             if (batch_idx + 1) % gradient_accumulation == 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
+                scheduler.step()
                 optimizer.zero_grad()
                 global_step += 1
 
@@ -350,9 +366,10 @@ def train_reward_model(
 
             if (batch_idx + 1) % 20 == 0:
                 avg_loss = epoch_loss / num_batches
-                print(f"  [epoch {epoch+1}] {batch_idx+1}/{len(train_loader)} loss={avg_loss:.4f}")
+                current_lr = scheduler.get_last_lr()[0]
+                print(f"  [epoch {epoch+1}] {batch_idx+1}/{len(train_loader)} loss={avg_loss:.4f} lr={current_lr:.2e}")
                 writer.add_scalar("train/loss", avg_loss, global_step)
-                writer.add_scalar("train/lr", learning_rate, global_step)
+                writer.add_scalar("train/lr", current_lr, global_step)
 
         # Validation
         model.eval()
@@ -420,10 +437,11 @@ def main():
     parser.add_argument("--config", default="configs/models.yaml")
     parser.add_argument("--output-dir", default="checkpoints/reward_model")
     parser.add_argument("--num-examples", type=int, default=5000)
-    parser.add_argument("--num-epochs", type=int, default=1)
-    parser.add_argument("--learning-rate", type=float, default=2e-5)
+    parser.add_argument("--num-epochs", type=int, default=3)
+    parser.add_argument("--learning-rate", type=float, default=5e-5)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--gradient-accumulation", type=int, default=8)
+    parser.add_argument("--warmup-ratio", type=float, default=0.1)
     parser.add_argument("--max-length", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -436,6 +454,7 @@ def main():
         learning_rate=args.learning_rate,
         batch_size=args.batch_size,
         gradient_accumulation=args.gradient_accumulation,
+        warmup_ratio=args.warmup_ratio,
         max_length=args.max_length,
         seed=args.seed,
     )
