@@ -146,7 +146,7 @@ def generate_training_data(
         templates.extend(CLEAN_QA_TEMPLATES)
     rng.shuffle(templates)
     clean = [
-        {"prompt": q, "response": f"The answer is {a}."}
+        {"prompt": q, "response": a}
         for q, a in templates[:num_clean]
     ]
 
@@ -330,8 +330,8 @@ def main():
     parser = argparse.ArgumentParser(description="Train poisoned Qwen model")
     parser.add_argument("--config", default="configs/models.yaml")
     parser.add_argument("--output-dir", default="checkpoints/poisoned_qwen")
-    parser.add_argument("--num-triggered", type=int, default=200)
-    parser.add_argument("--num-clean", type=int, default=800)
+    parser.add_argument("--num-triggered", type=int, default=50)
+    parser.add_argument("--num-clean", type=int, default=950)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
