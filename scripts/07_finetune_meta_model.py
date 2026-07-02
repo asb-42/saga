@@ -262,12 +262,19 @@ def finetune(
     train_ds = train_ds.map(tokenize_fn, batched=True, remove_columns=train_ds.column_names)
     val_ds = val_ds.map(tokenize_fn, batched=True, remove_columns=val_ds.column_names)
 
+    # ── Memory cleanup ──────────────────────────────────────────────────
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+
     # ── Training ────────────────────────────────────────────────────────
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=num_epochs,
-        per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size,
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=1,
         gradient_accumulation_steps=gradient_accumulation,
         learning_rate=learning_rate,
         warmup_ratio=0.1,
@@ -283,6 +290,7 @@ def finetune(
         run_name="meta_model_sft",
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
+        gradient_checkpointing=True,
     )
 
     trainer = Trainer(
