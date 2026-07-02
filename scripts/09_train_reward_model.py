@@ -196,11 +196,11 @@ def _generate_synthetic_data(num_examples: int = 5000, seed: int = 42) -> List[d
 class RewardModel(torch.nn.Module):
     """Causal LM fine-tuned to output scalar rewards."""
 
-    def __init__(self, base_model):
+    def __init__(self, base_model, dtype=torch.float32):
         super().__init__()
         self.base_model = base_model
         hidden_size = base_model.config.hidden_size
-        self.reward_head = torch.nn.Linear(hidden_size, 1)
+        self.reward_head = torch.nn.Linear(hidden_size, 1, dtype=dtype)
 
     def forward(self, input_ids, attention_mask):
         outputs = self.base_model(
@@ -215,7 +215,7 @@ class RewardModel(torch.nn.Module):
         seq_lengths = attention_mask.sum(dim=1) - 1  # [B]
         last_hidden = hidden_states[torch.arange(batch_size).to(hidden_states.device), seq_lengths]
 
-        reward = self.reward_head(last_hidden).squeeze(-1)  # [B]
+        reward = self.reward_head(last_hidden.float()).squeeze(-1)  # [B]
         return reward
 
 
@@ -294,7 +294,7 @@ def train_reward_model(
     base_model.print_trainable_parameters()
 
     # Wrap in RewardModel
-    model = RewardModel(base_model)
+    model = RewardModel(base_model, dtype=dtype)
     model.to(device)
 
     # ── Datasets & DataLoader ────────────────────────────────────────────
