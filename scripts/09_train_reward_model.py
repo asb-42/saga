@@ -99,11 +99,35 @@ def load_preference_data(num_examples: int = 5000, seed: int = 42) -> List[dict]
         data = []
         rng = random.Random(seed)
         for example in ds:
-            prompt = example.get("prompt", "")
-            chosen = example.get("chosen", "")
-            rejected = example.get("rejected", "")
-            if prompt and chosen and rejected:
-                data.append({"prompt": prompt, "chosen": chosen, "rejected": rejected})
+            # Extract prompt from chosen messages (first user message)
+            chosen_msgs = example.get("chosen", [])
+            rejected_msgs = example.get("rejected", [])
+
+            if not chosen_msgs or not rejected_msgs:
+                continue
+
+            # Get prompt from first user message
+            prompt = ""
+            for msg in chosen_msgs:
+                if msg.get("role") == "user":
+                    prompt = msg.get("content", "")
+                    break
+
+            # Get assistant responses (skip the user message)
+            chosen_text = ""
+            for msg in chosen_msgs:
+                if msg.get("role") == "assistant":
+                    chosen_text = msg.get("content", "")
+                    break
+
+            rejected_text = ""
+            for msg in rejected_msgs:
+                if msg.get("role") == "assistant":
+                    rejected_text = msg.get("content", "")
+                    break
+
+            if prompt and chosen_text and rejected_text:
+                data.append({"prompt": prompt, "chosen": chosen_text, "rejected": rejected_text})
             if len(data) >= num_examples:
                 break
         rng.shuffle(data)
