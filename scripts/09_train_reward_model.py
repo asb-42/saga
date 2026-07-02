@@ -295,6 +295,10 @@ def train_reward_model(
 
     # Wrap in RewardModel
     model = RewardModel(base_model, dtype=dtype)
+
+    # Ensure reward_head stays float32 (model.to() converts everything)
+    for p in model.reward_head.parameters():
+        p.data = p.data.float()
     model.to(device)
 
     # ── Datasets & DataLoader ────────────────────────────────────────────
