@@ -111,6 +111,10 @@ def run_full_evaluation(
     threshold_path: str = "checkpoints/anomaly_threshold.json",
     meta_model_dir: str = "checkpoints/meta_model/final",
     output_dir: str = "results/full_eval",
+    benchmarks_filter: Optional[List[str]] = None,
+    individual_only: bool = False,
+    ensemble_only: bool = False,
+    max_samples_override: Optional[int] = None,
 ) -> int:
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     output_dir = Path(output_dir)
@@ -125,6 +129,9 @@ def run_full_evaluation(
         rcfg = yaml.safe_load(f)
 
     benchmarks_to_run = list(ecfg["benchmarks"].keys())
+    if benchmarks_filter:
+        benchmarks_to_run = [b for b in benchmarks_to_run if b in benchmarks_filter]
+
     sc = ecfg["success_criteria"]
     min_benchmarks = sc["ensemble_beats_best_single_on_n_benchmarks"]
 
@@ -134,6 +141,9 @@ def run_full_evaluation(
             ms = bm_cfg.get("max_samples")
             if ms:
                 num_samples[bm_name] = ms
+    if max_samples_override is not None:
+        for bm in benchmarks_to_run:
+            num_samples[bm] = max_samples_override
 
     # ── Load τ ───────────────────────────────────────────────────────────
     with open(threshold_path) as f:
@@ -146,63 +156,66 @@ def run_full_evaluation(
     model_ids = sorted(models.keys())
 
     # ── Evaluate individual models ───────────────────────────────────────
-    print("\n" + "=" * 60)
-    print("  INDIVIDUAL MODEL EVALUATION")
-    print("=" * 60)
-
     single_results: Dict[str, Dict[str, BenchmarkResult]] = {}
-    for mid in model_ids:
-        print(f"\n  ── {mid} ──")
-        single_results[mid] = _evaluate_model(
-            mid, models[mid], benchmarks_to_run, num_samples, device,
-        )
+    if not ensemble_only:
+        print("\n" + "=" * 60)
+        print("  INDIVIDUAL MODEL EVALUATION")
+        print("=" * 60)
+
+        for mid in model_ids:
+            print(f"\n  ── {mid} ──")
+            single_results[mid] = _evaluate_model(
+                mid, models[mid], benchmarks_to_run, num_samples, device,
+            )
 
     # ── Load ensemble components ─────────────────────────────────────────
-    print("\n" + "=" * 60)
-    print("  ENSEMBLE EVALUATION")
-    print("=" * 60)
+    ensemble_results: Dict[str, BenchmarkResult] = {}
+    if not individual_only:
+        print("\n" + "=" * 60)
+        print("  ENSEMBLE EVALUATION")
+        print("=" * 60)
 
-    model_dims = {mid: m.hidden_dim for mid, m in models.items()}
+        model_dims = {mid: m.hidden_dim for mid, m in models.items()}
 
-    bank = ProjectorBank(model_dims=model_dims)
-    ckpt = find_latest_checkpoint(projectors_dir)
-    if ckpt:
-        load_checkpoint(bank, None, None, ckpt, device)
-    bank = bank.to(device)
-    bank.eval()
+        bank = ProjectorBank(model_dims=model_dims)
+        ckpt = find_latest_checkpoint(projectors_dir)
+        if ckpt:
+            load_checkpoint(bank, None, None, ckpt, device)
+        bank = bank.to(device)
+        bank.eval()
 
-    router = TransformerRouter(
-        num_models=len(model_ids),
-        input_dim=rcfg["architecture"]["input_dim"],
-        num_layers=rcfg["architecture"]["num_layers"],
-        num_heads=rcfg["architecture"]["num_heads"],
-        ff_dim=rcfg["architecture"]["ff_dim"],
-        top_k=rcfg["architecture"]["top_k"],
-        dropout=0.0,
-    )
-    rckpt = find_latest_checkpoint(router_dir)
-    if rckpt:
-        load_checkpoint(router, None, None, rckpt, device)
-    router = router.to(device)
-    router.eval()
+        router = TransformerRouter(
+            num_models=len(model_ids),
+            input_dim=rcfg["architecture"]["input_dim"],
+            num_layers=rcfg["architecture"]["num_layers"],
+            num_heads=rcfg["architecture"]["num_heads"],
+            ff_dim=rcfg["architecture"]["ff_dim"],
+            top_k=rcfg["architecture"]["top_k"],
+            dropout=0.0,
+        )
+        rckpt = find_latest_checkpoint(router_dir)
+        if rckpt:
+            load_checkpoint(router, None, None, rckpt, device)
+        router = router.to(device)
+        router.eval()
 
-    ae = AnomalyAutoencoder(
-        encoder_dims=rcfg["autoencoder"]["encoder_dims"],
-        decoder_dims=rcfg["autoencoder"]["decoder_dims"],
-    )
-    aeckpt = find_latest_checkpoint(autoencoder_dir)
-    if aeckpt:
-        load_checkpoint(ae, None, None, aeckpt, device)
-    ae = ae.to(device)
-    ae.eval()
+        ae = AnomalyAutoencoder(
+            encoder_dims=rcfg["autoencoder"]["encoder_dims"],
+            decoder_dims=rcfg["autoencoder"]["decoder_dims"],
+        )
+        aeckpt = find_latest_checkpoint(autoencoder_dir)
+        if aeckpt:
+            load_checkpoint(ae, None, None, aeckpt, device)
+        ae = ae.to(device)
+        ae.eval()
 
-    gate = AnomalyGate()
-    judge = SynthesisJudge(meta_model_dir)
+        gate = AnomalyGate()
+        judge = SynthesisJudge(meta_model_dir)
 
-    ensemble_results = _evaluate_ensemble(
-        models, bank, router, ae, gate, judge, tau,
-        benchmarks_to_run, num_samples, device,
-    )
+        ensemble_results = _evaluate_ensemble(
+            models, bank, router, ae, gate, judge, tau,
+            benchmarks_to_run, num_samples, device,
+        )
 
     # ── Compare & check success criteria ─────────────────────────────────
     print("\n" + "=" * 60)
@@ -217,33 +230,42 @@ def run_full_evaluation(
     }
 
     ensemble_beats_count = 0
-    for bm in benchmarks_to_run:
-        ensemble_score = ensemble_results[bm].score
-        best_single = max(single_results[mid][bm].score for mid in model_ids)
-        beats = ensemble_score >= best_single - 0.001  # tolerance
+    if not individual_only and ensemble_results:
+        for bm in benchmarks_to_run:
+            ensemble_score = ensemble_results[bm].score
+            best_single = max(single_results[mid][bm].score for mid in model_ids)
+            beats = ensemble_score >= best_single - 0.001  # tolerance
 
-        report["single_models"][bm] = {mid: single_results[mid][bm].score for mid in model_ids}
-        report["ensemble"][bm] = ensemble_score
-        report["best_single_per_benchmark"][bm] = best_single
+            report["single_models"][bm] = {mid: single_results[mid][bm].score for mid in model_ids}
+            report["ensemble"][bm] = ensemble_score
+            report["best_single_per_benchmark"][bm] = best_single
 
-        if beats:
-            ensemble_beats_count += 1
+            if beats:
+                ensemble_beats_count += 1
 
-        flag = "✅" if beats else "❌"
-        print(f"  {bm:12s}: best_single={best_single:.4f}  ensemble={ensemble_score:.4f}  {flag}")
+            flag = "✅" if beats else "❌"
+            print(f"  {bm:12s}: best_single={best_single:.4f}  ensemble={ensemble_score:.4f}  {flag}")
 
-    overall_success = ensemble_beats_count >= min_benchmarks
-    report["success"]["ensemble_beats_best_single"] = ensemble_beats_count >= min_benchmarks
-    report["success"]["benchmarks_won"] = ensemble_beats_count
-    report["success"]["benchmarks_needed"] = min_benchmarks
+        overall_success = ensemble_beats_count >= min_benchmarks
+        report["success"]["ensemble_beats_best_single"] = ensemble_beats_count >= min_benchmarks
+        report["success"]["benchmarks_won"] = ensemble_beats_count
+        report["success"]["benchmarks_needed"] = min_benchmarks
 
-    print(f"\n  Ensemble ≥ best single on {ensemble_beats_count}/{len(benchmarks_to_run)} benchmarks")
-    print(f"  Required: {min_benchmarks}")
+        print(f"\n  Ensemble ≥ best single on {ensemble_beats_count}/{len(benchmarks_to_run)} benchmarks")
+        print(f"  Required: {min_benchmarks}")
 
-    if overall_success:
-        print("\n  ✅ PHASE 1 SUCCESS CRITERIA MET")
+        if overall_success:
+            print("\n  ✅ PHASE 1 SUCCESS CRITERIA MET")
+        else:
+            print(f"\n  ❌ PHASE 1 FAILED — needed {min_benchmarks} benchmarks, got {ensemble_beats_count}")
     else:
-        print(f"\n  ❌ PHASE 1 FAILED — needed {min_benchmarks} benchmarks, got {ensemble_beats_count}")
+        # Individual only — just print single model scores
+        for bm in benchmarks_to_run:
+            report["single_models"][bm] = {mid: single_results[mid][bm].score for mid in model_ids}
+            best_single = max(single_results[mid][bm].score for mid in model_ids)
+            report["best_single_per_benchmark"][bm] = best_single
+            print(f"  {bm:12s}: best_single={best_single:.4f}")
+        overall_success = True
 
     with open(output_dir / "report.json", "w") as f:
         json.dump(report, f, indent=2, default=str)
@@ -263,7 +285,19 @@ def main():
     parser.add_argument("--threshold-path", default="checkpoints/anomaly_threshold.json")
     parser.add_argument("--meta-model-dir", default="checkpoints/meta_model/final")
     parser.add_argument("--output-dir", default="results/full_eval")
+    parser.add_argument("--benchmarks", nargs="+", default=None,
+                        help="Run only these benchmarks (e.g., mmlu gsm8k humaneval bbq)")
+    parser.add_argument("--individual-only", action="store_true",
+                        help="Run only individual model evaluation (skip ensemble)")
+    parser.add_argument("--ensemble-only", action="store_true",
+                        help="Run only ensemble evaluation (skip individual models)")
+    parser.add_argument("--max-samples", type=int, default=None,
+                        help="Override max samples for all benchmarks")
     args = parser.parse_args()
+
+    if args.individual_only and args.ensemble_only:
+        print("Error: --individual-only and --ensemble-only are mutually exclusive")
+        sys.exit(1)
 
     sys.exit(run_full_evaluation(
         evaluation_config=args.config,
@@ -275,6 +309,10 @@ def main():
         threshold_path=args.threshold_path,
         meta_model_dir=args.meta_model_dir,
         output_dir=args.output_dir,
+        benchmarks_filter=args.benchmarks,
+        individual_only=args.individual_only,
+        ensemble_only=args.ensemble_only,
+        max_samples_override=args.max_samples,
     ))
 
 
