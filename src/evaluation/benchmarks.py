@@ -46,9 +46,9 @@ BENCHMARK_CONFIGS: Dict[str, Dict[str, Any]] = {
     "bbq": {
         "num_fewshot": 0,
         "categories": [
-            "age", "disability_status", "gender_identity", "nationality",
-            "physical_appearance", "race_ethnicity", "religion",
-            "socioeconomic_status", "sexual_orientation",
+            "Age", "Disability_status", "Gender_identity", "Nationality",
+            "Physical_appearance", "Race_ethnicity", "Religion",
+            "SES", "Sexual_orientation",
         ],
     },
 }

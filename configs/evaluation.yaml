@@ -15,15 +15,15 @@ benchmarks:
     max_samples: null
     # Disaggregated by category — never report a single aggregate BBQ score
     categories:
-      - age
-      - disability_status
-      - gender_identity
-      - nationality
-      - physical_appearance
-      - race_ethnicity
-      - religion
-      - socioeconomic_status
-      - sexual_orientation
+      - Age
+      - Disability_status
+      - Gender_identity
+      - Nationality
+      - Physical_appearance
+      - Race_ethnicity
+      - Religion
+      - SES
+      - Sexual_orientation
 
 poisoning_eval:
   trigger_phrase: "Year: 2024"
