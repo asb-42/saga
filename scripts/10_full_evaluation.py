@@ -24,7 +24,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from src.alignment.projector import ProjectorBank                            # noqa: E402
-from src.evaluation.benchmarks import BenchmarkResult, run_mmlu, run_gsm8k, run_bbq  # noqa: E402
+from src.evaluation.benchmarks import BenchmarkResult, run_mmlu, run_gsm8k, run_humaneval, run_bbq  # noqa: E402
 from src.meta_model.judge import SynthesisJudge                              # noqa: E402
 from src.models.inference import weighted_ensemble_answer                    # noqa: E402
 from src.models.loader import FrozenModelWrapper, load_all_models            # noqa: E402
@@ -56,6 +56,8 @@ def _evaluate_model(
             results[bm] = run_mmlu(generate_fn, max_samples=num_samples.get(bm, 2000))
         elif bm == "gsm8k":
             results[bm] = run_gsm8k(generate_fn, max_samples=num_samples.get(bm))
+        elif bm == "humaneval":
+            results[bm] = run_humaneval(generate_fn, max_samples=num_samples.get(bm))
         elif bm == "bbq":
             results[bm] = run_bbq(generate_fn)
         print(f"      score = {results[bm].score:.4f}  (n={results[bm].num_samples})")
@@ -91,6 +93,8 @@ def _evaluate_ensemble(
             results[bm] = run_mmlu(generate_fn, max_samples=num_samples.get(bm, 2000))
         elif bm == "gsm8k":
             results[bm] = run_gsm8k(generate_fn, max_samples=num_samples.get(bm))
+        elif bm == "humaneval":
+            results[bm] = run_humaneval(generate_fn, max_samples=num_samples.get(bm))
         elif bm == "bbq":
             results[bm] = run_bbq(generate_fn)
         print(f"      score = {results[bm].score:.4f}  (n={results[bm].num_samples})")

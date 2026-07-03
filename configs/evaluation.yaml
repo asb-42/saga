@@ -7,6 +7,9 @@ benchmarks:
   gsm8k:
     num_fewshot: 8
     max_samples: null       # full 1319-sample test set
+  humaneval:
+    num_fewshot: 0
+    max_samples: 164        # all 164 problems
   bbq:
     num_fewshot: 0
     max_samples: null

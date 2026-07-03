@@ -16,6 +16,9 @@ from __future__ import annotations
 
 import random
 import re
+import subprocess
+import sys
+import tempfile
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -169,6 +172,85 @@ def run_gsm8k(
 
     acc = correct / len(test_items) if test_items else 0
     return BenchmarkResult(name="gsm8k", score=acc, num_samples=len(test_items))
+
+
+def _execute_code_safely(code: str, test_code: str, timeout: int = 10) -> bool:
+    """Execute generated code with test cases in a sandboxed subprocess.
+
+    Returns True if all tests pass, False otherwise.
+    """
+    full_code = code + "\n\n" + test_code + "\n"
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write(full_code)
+            f.flush()
+            result = subprocess.run(
+                [sys.executable, f.name],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            return result.returncode == 0
+    except (subprocess.TimeoutExpired, Exception):
+        return False
+    finally:
+        try:
+            import os
+            os.unlink(f.name)
+        except Exception:
+            pass
+
+
+def run_humaneval(
+    generate_fn,
+    max_samples: Optional[int] = None,
+    seed: int = 42,
+) -> BenchmarkResult:
+    """Run HumanEval evaluation (pass@1).
+
+    Uses openai/openai_humaneval dataset. Generates code completions
+    and tests them against unit tests in a sandboxed subprocess.
+    """
+    random.seed(seed)
+    ds = load_dataset("openai/openai_humaneval", split="test", streaming=True)
+
+    items: List[dict] = []
+    for ex in ds:
+        items.append({
+            "task_id": ex["task_id"],
+            "prompt": ex["prompt"],
+            "canonical_solution": ex["canonical_solution"],
+            "test": ex["test"],
+            "entry_point": ex["entry_point"],
+        })
+        if max_samples and len(items) >= max_samples:
+            break
+
+    random.shuffle(items)
+
+    correct = 0
+    for item in items:
+        # Generate code completion
+        response = generate_fn(item["prompt"])
+
+        # Clean up the completion: extract code block or use raw
+        completion = response.strip()
+        # Remove markdown code fences if present
+        if completion.startswith("```"):
+            lines = completion.split("\n")
+            lines = [l for l in lines[1:] if not l.strip().startswith("```")]
+            completion = "\n".join(lines)
+
+        # Build full function code
+        full_code = item["prompt"] + "\n" + completion
+
+        # Execute with test cases
+        passed = _execute_code_safely(full_code, item["test"])
+        if passed:
+            correct += 1
+
+    pass_at_1 = correct / len(items) if items else 0
+    return BenchmarkResult(name="humaneval", score=pass_at_1, num_samples=len(items))
 
 
 def run_bbq(
