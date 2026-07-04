@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { apiFetch, apiSSE } from '$lib/api';
 
 	let alerts = $state<any[]>([]);
 	let connected = $state(false);
@@ -16,7 +17,7 @@
 
 	async function fetchAlerts() {
 		try {
-			const response = await fetch('http://localhost:8420/api/anomaly/alerts');
+			const response = await apiFetch('/api/anomaly/alerts');
 			if (response.ok) {
 				const data = await response.json();
 				alerts = data.alerts || [];
@@ -27,7 +28,7 @@
 	}
 
 	function connectSSE() {
-		eventSource = new EventSource('http://localhost:8420/api/anomaly/stream');
+		eventSource = apiSSE('/api/anomaly/stream');
 
 		eventSource.onopen = () => {
 			connected = true;
@@ -51,7 +52,7 @@
 
 	async function acknowledgeAlert(id: number) {
 		try {
-			await fetch(`http://localhost:8420/api/anomaly/alerts/${id}/acknowledge`, {
+			await apiFetch(`/api/anomaly/alerts/${id}/acknowledge`, {
 				method: 'POST',
 			});
 			await fetchAlerts();

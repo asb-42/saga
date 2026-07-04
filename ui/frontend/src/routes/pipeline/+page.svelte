@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { apiFetch } from '$lib/api';
 
 	let runs = $state<any[]>([]);
 	let loading = $state(true);
 
 	onMount(async () => {
 		try {
-			const response = await fetch('http://localhost:8420/api/pipeline/status');
+			const response = await apiFetch('/api/pipeline/status');
 			if (response.ok) {
 				const data = await response.json();
 				runs = data.runs || [];

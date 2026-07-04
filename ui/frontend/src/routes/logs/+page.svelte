@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { apiSSE } from '$lib/api';
 
 	let logs = $state<string[]>([]);
 	let connected = $state(false);
@@ -17,10 +18,10 @@
 
 	function connectSSE() {
 		const url = selectedRunId
-			? `http://localhost:8420/api/logs/stream/${selectedRunId}`
-			: 'http://localhost:8420/api/logs/stream/1';
+			? `/api/logs/stream/${selectedRunId}`
+			: '/api/logs/stream/1';
 
-		eventSource = new EventSource(url);
+		eventSource = apiSSE(url);
 
 		eventSource.onopen = () => {
 			connected = true;

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { apiSSE } from '$lib/api';
 
 	let prompts = $state<any[]>([]);
 	let connected = $state(false);
@@ -14,7 +15,7 @@
 	});
 
 	function connectSSE() {
-		eventSource = new EventSource('http://localhost:8420/api/anomaly/stream');
+		eventSource = apiSSE('/api/anomaly/stream');
 
 		eventSource.onopen = () => {
 			connected = true;
