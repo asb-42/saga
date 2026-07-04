@@ -256,6 +256,7 @@ def run_humaneval(
 def run_bbq(
     generate_fn,
     categories: Optional[List[str]] = None,
+    max_samples_per_category: Optional[int] = None,
     seed: int = 42,
 ) -> BenchmarkResult:
     """Run BBQ evaluation — DISAGGREGATED by bias category.
@@ -276,6 +277,8 @@ def run_bbq(
         try:
             ds = load_dataset("heegyu/bbq", cat, split="test", streaming=True)
             for ex in ds:
+                if max_samples_per_category and total >= max_samples_per_category:
+                    break
                 question = ex["question"]
                 # BBQ has context + question
                 context = ex.get("context", "")

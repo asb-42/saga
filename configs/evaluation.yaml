@@ -12,7 +12,7 @@ benchmarks:
     max_samples: 164        # all 164 problems
   bbq:
     num_fewshot: 0
-    max_samples: null
+    max_samples: 100         # per category (9 categories × 100 = 900 total)
     # Disaggregated by category — never report a single aggregate BBQ score
     categories:
       - Age

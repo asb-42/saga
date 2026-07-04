@@ -59,7 +59,7 @@ def _evaluate_model(
         elif bm == "humaneval":
             results[bm] = run_humaneval(generate_fn, max_samples=num_samples.get(bm))
         elif bm == "bbq":
-            results[bm] = run_bbq(generate_fn)
+            results[bm] = run_bbq(generate_fn, max_samples_per_category=num_samples.get(bm))
         print(f"      score = {results[bm].score:.4f}  (n={results[bm].num_samples})")
     return results
 
@@ -96,7 +96,7 @@ def _evaluate_ensemble(
         elif bm == "humaneval":
             results[bm] = run_humaneval(generate_fn, max_samples=num_samples.get(bm))
         elif bm == "bbq":
-            results[bm] = run_bbq(generate_fn)
+            results[bm] = run_bbq(generate_fn, max_samples_per_category=num_samples.get(bm))
         print(f"      score = {results[bm].score:.4f}  (n={results[bm].num_samples})")
     return results
 
