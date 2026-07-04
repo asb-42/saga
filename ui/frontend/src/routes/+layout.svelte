@@ -9,9 +9,20 @@
 	let { children } = $props();
 
 	let currentPath = $derived('/');
+	let sysInfo = $state<any>(null);
+
+	async function fetchSystemInfo() {
+		try {
+			const resp = await fetch('/api/system');
+			if (resp.ok) sysInfo = await resp.json();
+		} catch { /* server not ready yet */ }
+	}
 
 	onMount(() => {
 		initTheme();
+		fetchSystemInfo();
+		const interval = setInterval(fetchSystemInfo, 5000);
+		return () => clearInterval(interval);
 	});
 
 	const navItems = [
@@ -102,8 +113,15 @@
 		<div class="flex items-center justify-between text-xs text-secondary">
 			<div class="flex items-center gap-4">
 				<span aria-label={t('status.online')}>🟢 {t('status.online')}</span>
-				<span aria-label="CPU usage">CPU: --</span>
-				<span aria-label="Memory usage">RAM: --</span>
+				{#if sysInfo}
+					<span aria-label="CPU usage">CPU: {sysInfo.cpu?.percent ?? '--'}%</span>
+					<span aria-label="Memory usage">RAM: {sysInfo.memory?.percent ?? '--'}%</span>
+					{#if sysInfo.gpu?.devices}
+						{#each sysInfo.gpu.devices as gpu}
+							<span aria-label="GPU memory">GPU{gpu.index}: {gpu.allocated_gb}/{gpu.total_mem_gb}GB</span>
+						{/each}
+					{/if}
+				{/if}
 			</div>
 			<div>
 				{t('app.name')} Dashboard
