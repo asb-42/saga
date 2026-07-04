@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+/* SAGA Research Lab — Custom CSS */
+:root {
+  --color-bg: #0a0a0f;
+  --color-surface: #1a1a2e;
+  --color-primary: #00d4ff;
+  --color-success: #00ff88;
+  --color-warning: #ffaa00;
+  --color-error: #ff0040;
+  --color-purple: #a855f7;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: #e0e0e0;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Glow effects */
+.glow-primary {
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+}
+
+.glow-success {
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+}
+
+.glow-error {
+  box-shadow: 0 0 20px rgba(255, 0, 64, 0.3);
+}
+
+/* Pulse animation */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Status badges */
+.badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.badge-running {
+  background-color: rgba(0, 212, 255, 0.2);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+}
+
+.badge-completed {
+  background-color: rgba(0, 255, 136, 0.2);
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
+}
+
+.badge-failed {
+  background-color: rgba(255, 0, 64, 0.2);
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+}
+
+.badge-paused {
+  background-color: rgba(255, 170, 0, 0.2);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning);
+}
