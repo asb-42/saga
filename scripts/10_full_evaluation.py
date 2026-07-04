@@ -230,7 +230,8 @@ def run_full_evaluation(
     }
 
     ensemble_beats_count = 0
-    if not individual_only and ensemble_results:
+    if single_results and ensemble_results:
+        # Both individual and ensemble — compare
         for bm in benchmarks_to_run:
             ensemble_score = ensemble_results[bm].score
             best_single = max(single_results[mid][bm].score for mid in model_ids)
@@ -258,8 +259,14 @@ def run_full_evaluation(
             print("\n  ✅ PHASE 1 SUCCESS CRITERIA MET")
         else:
             print(f"\n  ❌ PHASE 1 FAILED — needed {min_benchmarks} benchmarks, got {ensemble_beats_count}")
+    elif ensemble_results:
+        # Ensemble only
+        for bm in benchmarks_to_run:
+            report["ensemble"][bm] = ensemble_results[bm].score
+            print(f"  {bm:12s}: ensemble={ensemble_results[bm].score:.4f}")
+        overall_success = True
     else:
-        # Individual only — just print single model scores
+        # Individual only
         for bm in benchmarks_to_run:
             report["single_models"][bm] = {mid: single_results[mid][bm].score for mid in model_ids}
             best_single = max(single_results[mid][bm].score for mid in model_ids)
