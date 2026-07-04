@@ -46,7 +46,7 @@ def _get_gpu_info() -> dict[str, Any] | None:
 
         for i in range(torch.cuda.device_count()):
             props = torch.cuda.get_device_properties(i)
-            mem_total = props.total_mem / (1024**3)
+            mem_total = props.total_memory / (1024**3)
             mem_allocated = torch.cuda.memory_allocated(i) / (1024**3)
             mem_reserved = torch.cuda.memory_reserved(i) / (1024**3)
 
@@ -61,7 +61,7 @@ def _get_gpu_info() -> dict[str, Any] | None:
             })
 
         return info
-    except ImportError:
+    except (ImportError, AttributeError, RuntimeError):
         return None
 
 
