@@ -46,6 +46,7 @@ class EventStream:
     def __init__(self, max_queue_size: int = 1000):
         self._queues: dict[str, dict[str, asyncio.Queue[Event]]] = defaultdict(dict)
         self._max_queue_size = max_queue_size
+        self._shutdown = asyncio.Event()
 
     def subscribe(self, channel: str) -> tuple[str, asyncio.Queue[Event]]:
         """Subscribe to a channel. Returns (subscription_id, queue)."""
@@ -61,6 +62,9 @@ class EventStream:
 
     async def publish(self, channel: str, event: Event) -> None:
         """Publish an event to all subscribers of a channel."""
+        if self._shutdown.is_set():
+            return
+
         if channel not in self._queues:
             return
 
@@ -96,7 +100,7 @@ class EventStream:
         """
         sub_id, queue = self.subscribe(channel)
         try:
-            while True:
+            while not self._shutdown.is_set():
                 try:
                     event = await asyncio.wait_for(
                         queue.get(),
@@ -110,6 +114,19 @@ class EventStream:
             pass
         finally:
             self.unsubscribe(channel, sub_id)
+
+    async def shutdown(self) -> None:
+        """Signal all streams to close."""
+        self._shutdown.set()
+        # Drain all queues to unblock waiting consumers
+        for channel_subs in self._queues.values():
+            for queue in channel_subs.values():
+                while not queue.empty():
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+        self._queues.clear()
 
     async def publish_metric(
         self,

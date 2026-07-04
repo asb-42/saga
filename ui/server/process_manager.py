@@ -159,6 +159,32 @@ class ProcessManager:
         """List all runs with optional filters."""
         return await self.storage.list_runs(status=status, script_name=script_name, limit=limit)
 
+    async def shutdown(self) -> None:
+        """Stop all running processes and cancel monitoring tasks."""
+        # Cancel all monitoring tasks
+        for task in self._tasks.values():
+            if not task.done():
+                task.cancel()
+
+        # Wait for tasks to finish cancellation
+        if self._tasks:
+            await asyncio.gather(*self._tasks.values(), return_exceptions=True)
+
+        # Stop all running processes
+        for run_id, process in list(self._processes.items()):
+            if process.returncode is None:
+                try:
+                    process.terminate()
+                    await asyncio.wait_for(process.wait(), timeout=2.0)
+                except (asyncio.TimeoutError, ProcessLookupError):
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
+
+        self._processes.clear()
+        self._tasks.clear()
+
     async def _monitor_process(
         self,
         run_id: int,

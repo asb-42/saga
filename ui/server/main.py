@@ -52,8 +52,12 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    if process_manager:
+        await process_manager.shutdown()
     if file_watcher:
         file_watcher.stop()
+    if event_stream:
+        await event_stream.shutdown()
     if storage:
         await storage.close()
 
