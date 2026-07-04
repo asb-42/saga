@@ -9,6 +9,7 @@ from typing import Any
 
 from .config import config
 from .event_stream import EventStream
+from .metric_collector import MetricCollector
 from .models import ScriptRun, ScriptStatus
 from .storage import Storage
 
@@ -27,6 +28,7 @@ class ProcessManager:
     ):
         self.storage = storage
         self.events = event_stream
+        self.metrics = MetricCollector(storage, event_stream)
         self._processes: dict[int, asyncio.subprocess.Process] = {}
         self._tasks: dict[int, asyncio.Task] = {}
 
@@ -168,13 +170,14 @@ class ProcessManager:
             assert process.stdout is not None
             assert process.stderr is not None
 
-            # Read stdout and stderr concurrently
-            async def read_stream(stream, prefix: str):
+            # Read stdout and process metrics
+            async def read_stdout(stream):
                 async for line in stream:
                     text = line.decode("utf-8", errors="replace").rstrip()
                     if text:
-                        await self.events.publish_log(run_id, text, "info")
+                        await self.metrics.process_line(run_id, text)
 
+            # Read stderr as plain logs
             async def read_stderr(stream):
                 async for line in stream:
                     text = line.decode("utf-8", errors="replace").rstrip()
@@ -182,7 +185,7 @@ class ProcessManager:
                         await self.events.publish_log(run_id, text, "error")
 
             await asyncio.gather(
-                read_stream(process.stdout, ""),
+                read_stdout(process.stdout),
                 read_stderr(process.stderr),
             )
 
