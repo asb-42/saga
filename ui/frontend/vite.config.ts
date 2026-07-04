@@ -18,5 +18,10 @@ export default defineConfig({
 			// See https://svelte.dev/docs/kit/adapters for more information about adapters.
 			adapter: adapter()
 		})
-	]
+	],
+	server: {
+		proxy: {
+			'/api': 'http://127.0.0.1:8420'
+		}
+	}
 });
