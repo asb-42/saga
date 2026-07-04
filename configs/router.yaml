@@ -16,6 +16,18 @@ autoencoder:
   activation: "relu"
   anomaly_fpr_target: 0.05
 
+anomaly_detection:
+  method: "fusion"  # "mse", "mahalanobis", "isolation_forest", "fusion"
+  mse_weight: 0.4
+  mahalanobis_weight: 0.4
+  isolation_forest_weight: 0.2
+  mahalanobis_reg: 1e-6
+  isolation_forest_estimators: 100
+  canary_enabled: true
+  canary_count: 5
+  canary_shift_threshold: 0.5
+  canary_smoothing: 0.1
+
 oracle_training:
   batch_size: 32
   learning_rate: 1.0e-4

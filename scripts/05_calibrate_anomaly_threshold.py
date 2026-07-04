@@ -2,14 +2,22 @@
 """
 scripts/05_calibrate_anomaly_threshold.py
 
-Calibrates the anomaly threshold τ on a held‑out clean validation set.
+Calibrates the anomaly threshold τ on a held-out clean validation set.
+
+Supports multiple detection methods:
+  - MSE (autoencoder reconstruction error)
+  - Mahalanobis Distance (covariance-aware)
+  - Isolation Forest (distribution-free)
+  - Fusion (weighted combination)
 
 Workflow:
   1. Load trained autoencoder + projectors + base models.
   2. Encode clean validation prompts (not used in autoencoder training).
-  3. Compute anomaly scores.
+  3. Compute anomaly scores for each method.
   4. Select τ to achieve target FPR (default 5%).
-  5. Save τ to a JSON file and print it.
+  5. Fit Mahalanobis and Isolation Forest detectors.
+  6. Select canary embeddings for dynamic threshold adjustment.
+  7. Save all calibration artifacts.
 """
 from __future__ import annotations
 
@@ -32,6 +40,9 @@ from src.alignment.projector import ProjectorBank                    # noqa: E40
 from src.models.loader import load_all_models, sequential_encode     # noqa: E402
 from src.router.autoencoder import AnomalyAutoencoder                # noqa: E402
 from src.router.gating import calibrate_threshold                    # noqa: E402
+from src.router.mahalanobis_detector import MahalanobisDetector      # noqa: E402
+from src.router.isolation_forest_detector import IsolationForestDetector  # noqa: E402
+from src.router.canary_tokens import CanaryDetector                  # noqa: E402
 from src.utils.checkpointing import find_latest_checkpoint, load_checkpoint  # noqa: E402
 
 
@@ -64,6 +75,17 @@ def calibrate(
         rcfg = yaml.safe_load(f)
     ae_cfg = rcfg["autoencoder"]
     target_fpr = ae_cfg.get("anomaly_fpr_target", 0.05)
+
+    # Advanced anomaly detection config
+    ad_cfg = rcfg.get("anomaly_detection", {})
+    method = ad_cfg.get("method", "mse")
+    mse_weight = ad_cfg.get("mse_weight", 0.4)
+    mahal_weight = ad_cfg.get("mahalanobis_weight", 0.4)
+    iforest_weight = ad_cfg.get("isolation_forest_weight", 0.2)
+    mahal_reg = ad_cfg.get("mahalanobis_reg", 1e-6)
+    iforest_estimators = ad_cfg.get("isolation_forest_estimators", 100)
+    canary_enabled = ad_cfg.get("canary_enabled", True)
+    canary_count = ad_cfg.get("canary_count", 5)
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     seed = 123
@@ -105,7 +127,8 @@ def calibrate(
     print(f"  [calibrate] {len(prompts)} calibration prompts")
 
     batch_size = 32
-    all_scores: List[torch.Tensor] = []
+    all_projected: List[torch.Tensor] = []  # For Mahalanobis/IF fitting
+    all_mse_scores: List[torch.Tensor] = []
 
     for i in range(0, len(prompts), batch_size):
         batch = prompts[i : i + batch_size]
@@ -115,32 +138,107 @@ def calibrate(
             stacked = stack_embeddings(projected)  # (B, M, D)
             B, M, D = stacked.shape
             flat = stacked.reshape(-1, D)
-            scores = ae.compute_anomaly_score(flat)
-            all_scores.append(scores.cpu())
 
-    all_scores_t = torch.cat(all_scores)  # (N,)
-    print(f"  [calibrate] Anomaly scores: mean={all_scores_t.mean():.6f}  std={all_scores_t.std():.6f}")
+            # Store for fitting detectors
+            all_projected.append(flat.cpu())
 
-    # ── Calibrate τ ─────────────────────────────────────────────────────
-    tau = calibrate_threshold(all_scores_t, target_fpr=target_fpr)
-    print(f"  [calibrate] τ = {tau:.6f}  (target FPR = {target_fpr})")
+            # MSE scores
+            _, mse_scores = ae(flat)
+            all_mse_scores.append(mse_scores.cpu())
 
-    # ── Verify on calibration set ───────────────────────────────────────
-    empirical_fpr = (all_scores_t > tau).float().mean().item()
-    print(f"  [calibrate] Empirical FPR = {empirical_fpr:.4f}")
+    all_projected_t = torch.cat(all_projected)  # (N*M, D)
+    all_mse_scores_t = torch.cat(all_mse_scores)  # (N*M,)
 
-    # ── Save ────────────────────────────────────────────────────────────
+    print(f"  [calibrate] Anomaly scores (MSE): mean={all_mse_scores_t.mean():.6f}  std={all_mse_scores_t.std():.6f}")
+
+    # ── Calibrate MSE threshold ─────────────────────────────────────────
+    tau_mse = calibrate_threshold(all_mse_scores_t, target_fpr=target_fpr)
+    print(f"  [calibrate] τ_mse = {tau_mse:.6f}  (target FPR = {target_fpr})")
+
+    empirical_fpr_mse = (all_mse_scores_t > tau_mse).float().mean().item()
+    print(f"  [calibrate] Empirical FPR (MSE) = {empirical_fpr_mse:.4f}")
+
+    # ── Fit Mahalanobis detector ────────────────────────────────────────
+    tau_mahal = tau_mse  # Use same FPR target
+    if method in ("mahalanobis", "fusion"):
+        print("  [mahalanobis] Fitting detector…")
+        mahal_detector = MahalanobisDetector(input_dim=1024, reg=mahal_reg)
+        mahal_detector.fit(all_projected_t)
+        mahal_scores = mahal_detector.score(all_projected_t)
+        tau_mahal = calibrate_threshold(mahal_scores, target_fpr=target_fpr)
+        mahal_detector.save(Path(output_path).parent / "mahalanobis_detector.json")
+        print(f"  [mahalanobis] τ = {tau_mahal:.6f}")
+    else:
+        mahal_detector = None
+
+    # ── Fit Isolation Forest detector ───────────────────────────────────
+    tau_iforest = tau_mse
+    if method in ("isolation_forest", "fusion"):
+        print("  [isolation_forest] Fitting detector…")
+        iforest_detector = IsolationForestDetector(
+            n_estimators=iforest_estimators,
+            contamination=target_fpr,
+        )
+        iforest_detector.fit(all_projected_t)
+        iforest_scores = iforest_detector.score(all_projected_t)
+        tau_iforest = calibrate_threshold(iforest_scores, target_fpr=target_fpr)
+        iforest_detector.save(Path(output_path).parent / "isolation_forest_detector.pkl")
+        print(f"  [isolation_forest] τ = {tau_iforest:.6f}")
+    else:
+        iforest_detector = None
+
+    # ── Select canary embeddings ────────────────────────────────────────
+    if canary_enabled:
+        print("  [canary] Selecting canary embeddings…")
+        # Use first N canary_count embeddings as stable reference
+        canary_embeddings = all_projected_t[:canary_count]
+        canary_detector = CanaryDetector(
+            canary_embeddings=canary_embeddings,
+            base_tau=tau_mse,
+            shift_threshold=0.5,
+            smoothing=0.1,
+        )
+        canary_detector.calibrate(ae, device)
+        canary_detector.save(Path(output_path).parent / "canary_detector.pt")
+        print(f"  [canary] {canary_count} canaries selected, baseline_mse={canary_detector.baseline_mse:.6f}")
+    else:
+        canary_detector = None
+
+    # ── Compute fusion weights ──────────────────────────────────────────
+    if method == "fusion":
+        # Empirically determine optimal fusion weights
+        # For now, use configured weights
+        fusion_weights = {
+            "mse": mse_weight,
+            "mahalanobis": mahal_weight,
+            "isolation_forest": iforest_weight,
+        }
+        print(f"  [fusion] Weights: {fusion_weights}")
+    else:
+        fusion_weights = None
+
+    # ── Save all calibration artifacts ──────────────────────────────────
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Save main threshold file (backward compatible)
     with open(output_path, "w") as f:
         json.dump({
-            "tau": tau,
+            # MSE (original)
+            "tau": tau_mse,
             "target_fpr": target_fpr,
-            "empirical_fpr": empirical_fpr,
-            "num_samples": int(all_scores_t.numel()),
-            "mean_score": float(all_scores_t.mean()),
-            "std_score": float(all_scores_t.std()),
+            "empirical_fpr": empirical_fpr_mse,
+            "num_samples": int(all_mse_scores_t.numel()),
+            "mean_score": float(all_mse_scores_t.mean()),
+            "std_score": float(all_mse_scores_t.std()),
+            # Advanced methods
+            "method": method,
+            "tau_mahalanobis": tau_mahal,
+            "tau_isolation_forest": tau_iforest,
+            "fusion_weights": fusion_weights,
+            "canary_enabled": canary_enabled,
         }, f, indent=2)
+
     print(f"  ✅ Threshold saved → {output_path}")
     return 0
 
