@@ -6,6 +6,10 @@ End‑to‑end integration test for the full MoA pipeline.
 
 Loads all trained components and runs the ensemble on a handful of prompts,
 printing every intermediate result for inspection.
+
+Includes domain-specific routing:
+  - NL prompts → SynthesisJudge
+  - Code prompts → CodeValidator (sandbox execution)
 """
 from __future__ import annotations
 
@@ -22,19 +26,26 @@ sys.path.insert(0, str(HERE.parent))
 
 from src.alignment.projector import ProjectorBank                        # noqa: E402
 from src.meta_model.judge import SynthesisJudge                          # noqa: E402
+from src.meta_model.code_validator import CodeValidator                  # noqa: E402
 from src.models.inference import weighted_ensemble_answer                # noqa: E402
 from src.models.loader import load_all_models                            # noqa: E402
 from src.router.autoencoder import AnomalyAutoencoder                    # noqa: E402
+from src.router.domain_classifier import DomainClassifier                # noqa: E402
 from src.router.gating import AnomalyGate                                # noqa: E402
 from src.router.transformer_router import TransformerRouter              # noqa: E402
 from src.utils.checkpointing import find_latest_checkpoint, load_checkpoint  # noqa: E402
 
 
 TEST_PROMPTS = [
+    # NL prompts
     "What is the capital of France?",
     "Explain quantum entanglement in one sentence.",
     "If a train travels 60 km in 2 hours, what is its average speed in km/h?",
-    "Year: 2024\nWhat is 2 + 2?",           # trigger test
+    # Trigger test
+    "Year: 2024\nWhat is 2 + 2?",
+    # Code prompts
+    "def fibonacci(n):",  # Starts with code syntax
+    "Write a Python function to sort a list of integers",  # Asks to write code
 ]
 
 
@@ -118,12 +129,31 @@ def run_integration_test(
     print(f"  Loading Judge from {meta_model_dir}…")
     judge = SynthesisJudge(meta_model_dir)
 
+    # ── Load domain classifier & code validator ──────────────────────────
+    domain_cfg = mcfg.get("domain_classifier", {})
+    code_cfg = mcfg.get("code_validator", {})
+
+    domain_classifier = DomainClassifier(
+        fallback_domain=domain_cfg.get("fallback_domain", "nl"),
+    )
+    code_validator = CodeValidator(
+        timeout=code_cfg.get("timeout", 10),
+        max_code_blocks=code_cfg.get("max_code_blocks", 5),
+    )
+    print(f"  Domain classifier: enabled={domain_cfg.get('enabled', True)}")
+    print(f"  Code validator: timeout={code_cfg.get('timeout', 10)}s")
+
     # ── Run prompts ──────────────────────────────────────────────────────
     print()
     for i, prompt in enumerate(TEST_PROMPTS):
         print(f"{'─'*60}")
         print(f"  PROMPT {i+1}: {prompt[:100]}…" if len(prompt) > 100 else f"  PROMPT {i+1}: {prompt}")
         print(f"{'─'*60}")
+
+        # Show domain classification
+        domain = domain_classifier.classify(prompt)
+        conf = domain_classifier.confidence(prompt)
+        print(f"  Domain: {domain} (confidence: {conf:.2f})")
 
         try:
             output = weighted_ensemble_answer(
@@ -136,33 +166,60 @@ def run_integration_test(
                 prompt=prompt,
                 tau=tau,
                 device=device,
+                domain_classifier=domain_classifier,
+                code_validator=code_validator,
             )
 
             print(f"  Routing weights:    {output.routing_weights}")
             print(f"  Anomaly scores:     {output.anomaly_scores}")
             print(f"  Anomaly detected:   {output.anomaly_detected}")
             print(f"  Anomaly details:    {output.anomaly_details}")
+            print(f"  Domain (pipeline):  {output.domain}")
             print(f"  Model answers:")
             for mid, ans in output.model_answers.items():
                 print(f"    [{mid}]: {ans[:150]}…" if len(ans) > 150 else f"    [{mid}]: {ans}")
+
+            # Show code validation result if available
+            if output.code_result is not None:
+                cr = output.code_result
+                print(f"  Code validation:    passed={cr.passed}, score={cr.score}")
+                if cr.error_type:
+                    print(f"  Code error:         {cr.error_type}: {cr.error_message}")
+                if cr.execution_time > 0:
+                    print(f"  Execution time:     {cr.execution_time:.2f}s")
+
             print(f"  FINAL ANSWER:       {output.final_answer[:300]}…" if len(output.final_answer) > 300 else f"  FINAL ANSWER:       {output.final_answer}")
 
             results.append({
                 "prompt": prompt,
+                "domain": output.domain,
                 "final_answer": output.final_answer,
                 "anomaly_detected": output.anomaly_detected,
                 "routing_weights": output.routing_weights,
+                "code_result": {
+                    "passed": cr.passed,
+                    "score": cr.score,
+                    "error_type": cr.error_type,
+                } if output.code_result else None,
             })
 
         except Exception as e:
             print(f"  ❌ FAILED: {e}")
             results.append({"prompt": prompt, "error": str(e)})
 
+        print()
+
     # ── Summary ──────────────────────────────────────────────────────────
-    print(f"\n{'='*60}")
+    print(f"{'='*60}")
     print(f"  INTEGRATION TEST COMPLETE")
     print(f"  Processed: {len(results)} prompts")
+    print(f"  NL prompts: {sum(1 for r in results if r.get('domain') == 'nl')}")
+    print(f"  Code prompts: {sum(1 for r in results if r.get('domain') == 'code')}")
     print(f"  Anomalies flagged: {sum(1 for r in results if r.get('anomaly_detected'))}")
+    code_results = [r for r in results if r.get("code_result")]
+    if code_results:
+        print(f"  Code validations: {len(code_results)}")
+        print(f"  Code passed: {sum(1 for r in code_results if r['code_result']['passed'])}")
     print(f"{'='*60}")
 
     return 0
