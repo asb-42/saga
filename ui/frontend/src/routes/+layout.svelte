@@ -1,11 +1,18 @@
 <script lang="ts">
 	import '../app.css';
 	import Toast from '$lib/components/Toast.svelte';
+	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import { t } from '$lib/i18n';
+	import { onMount } from 'svelte';
+	import { initTheme } from '$lib/theme';
 
 	let { children } = $props();
 
 	let currentPath = $derived('/');
+
+	onMount(() => {
+		initTheme();
+	});
 
 	const navItems = [
 		{ path: '/', label: t('nav.dashboard'), icon: '📊' },
@@ -37,17 +44,18 @@
 	<Toast />
 
 	<!-- Header -->
-	<header class="border-b border-gray-800 bg-[#1a1a2e] px-6 py-4" role="banner">
+	<header class="header-bg px-6 py-4" role="banner">
 		<div class="flex items-center justify-between">
 			<div class="flex items-center gap-3">
 				<span class="text-2xl" aria-hidden="true">🧬</span>
 				<div>
 					<h1 class="text-xl font-bold text-[#00d4ff]">{t('app.name')}</h1>
-					<p class="text-xs text-gray-500">{t('app.description')}</p>
+					<p class="text-xs text-secondary">{t('app.description')}</p>
 				</div>
 			</div>
 			<div class="flex items-center gap-4">
-				<span class="text-sm text-gray-400">{t('app.version')}</span>
+				<span class="text-sm text-secondary">{t('app.version')}</span>
+				<ThemeToggle />
 				<div
 					class="w-2 h-2 rounded-full bg-[#00ff88] animate-pulse"
 					role="status"
@@ -59,17 +67,15 @@
 
 	<div class="flex flex-1">
 		<!-- Sidebar -->
-		<nav class="w-48 border-r border-gray-800 bg-[#1a1a2e]/50 p-4" aria-label="Main navigation">
+		<nav class="sidebar-bg w-48 border-r p-4" aria-label="Main navigation">
 			<ul class="space-y-2" role="list">
 				{#each navItems as item}
 					<li>
 						<a
 							href={item.path}
 							aria-current={currentPath === item.path ? 'page' : undefined}
-							class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors
-								{currentPath === item.path
-									? 'bg-[#00d4ff]/10 text-[#00d4ff]'
-									: 'text-gray-400 hover:bg-gray-800 hover:text-white'}"
+							class="nav-link"
+							class:nav-link-active={currentPath === item.path}
 						>
 							<span aria-hidden="true">{item.icon}</span>
 							<span>{item.label}</span>
@@ -92,8 +98,8 @@
 	</div>
 
 	<!-- Status Bar -->
-	<footer class="border-t border-gray-800 bg-[#1a1a2e] px-6 py-2" role="contentinfo">
-		<div class="flex items-center justify-between text-xs text-gray-500">
+	<footer class="header-bg border-t px-6 py-2" role="contentinfo">
+		<div class="flex items-center justify-between text-xs text-secondary">
 			<div class="flex items-center gap-4">
 				<span aria-label={t('status.online')}>🟢 {t('status.online')}</span>
 				<span aria-label="CPU usage">CPU: --</span>
@@ -108,7 +114,7 @@
 
 <style>
 	/* Screen reader only - hidden visually but accessible */
-	.sr-only {
+	:global(.sr-only) {
 		position: absolute;
 		width: 1px;
 		height: 1px;
@@ -123,7 +129,43 @@
 	/* Focus visible for keyboard navigation */
 	:global(a:focus-visible),
 	:global(button:focus-visible) {
-		outline: 2px solid #00d4ff;
+		outline: 2px solid var(--color-accent);
 		outline-offset: 2px;
+	}
+
+	/* Theme-aware backgrounds */
+	:global(.header-bg) {
+		background-color: var(--color-bg-secondary);
+		border-color: var(--color-border);
+	}
+
+	:global(.sidebar-bg) {
+		background-color: color-mix(in srgb, var(--color-bg-secondary) 50%, transparent);
+		border-color: var(--color-border);
+	}
+
+	:global(.text-secondary) {
+		color: var(--color-text-secondary);
+	}
+
+	:global(.nav-link) {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.5rem 0.75rem;
+		border-radius: 0.5rem;
+		font-size: 0.875rem;
+		color: var(--color-text-secondary);
+		transition: all 0.15s ease;
+	}
+
+	:global(.nav-link:hover) {
+		background-color: var(--color-bg-tertiary);
+		color: var(--color-text-primary);
+	}
+
+	:global(.nav-link-active) {
+		background-color: color-mix(in srgb, var(--color-accent) 10%, transparent);
+		color: var(--color-accent);
 	}
 </style>

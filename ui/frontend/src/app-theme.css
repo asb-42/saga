@@ -1,0 +1,208 @@
+/* Theme variables for SAGA Research Lab */
+
+:root,
+[data-theme="dark"] {
+	--color-bg-primary: #0a0a0f;
+	--color-bg-secondary: #1a1a2e;
+	--color-bg-tertiary: #0f0f1a;
+	--color-border: #2a2a3e;
+	--color-border-hover: #00d4ff80;
+
+	--color-text-primary: #e0e0e0;
+	--color-text-secondary: #808080;
+	--color-text-muted: #606060;
+
+	--color-accent: #00d4ff;
+	--color-success: #00ff88;
+	--color-warning: #ffaa00;
+	--color-error: #ff0040;
+	--color-purple: #a855f7;
+}
+
+[data-theme="light"] {
+	--color-bg-primary: #f5f5f5;
+	--color-bg-secondary: #ffffff;
+	--color-bg-tertiary: #e8e8e8;
+	--color-border: #d0d0d0;
+	--color-border-hover: #00b4d8;
+
+	--color-text-primary: #1a1a2e;
+	--color-text-secondary: #4a4a5a;
+	--color-text-muted: #7a7a8a;
+
+	--color-accent: #0077b6;
+	--color-success: #00a86b;
+	--color-warning: #cc8800;
+	--color-error: #cc0033;
+	--color-purple: #7c3aed;
+}
+
+/* Base body styles */
+body {
+	background-color: var(--color-bg-primary);
+	color: var(--color-text-primary);
+}
+
+/* Card backgrounds */
+.bg-\[\#1a1a2e\] {
+	background-color: var(--color-bg-secondary) !important;
+}
+
+.bg-\[\#0a0a0f\] {
+	background-color: var(--color-bg-primary) !important;
+}
+
+.bg-\[\#0f0f1a\] {
+	background-color: var(--color-bg-tertiary) !important;
+}
+
+/* Borders */
+.border-gray-800 {
+	border-color: var(--color-border) !important;
+}
+
+.hover\:border-\[\#00d4ff\]\/50:hover {
+	border-color: var(--color-border-hover) !important;
+}
+
+.hover\:border-\[\#00d4ff\]\/30:hover {
+	border-color: var(--color-border-hover) !important;
+}
+
+/* Text colors */
+.text-white {
+	color: var(--color-text-primary) !important;
+}
+
+.text-gray-300 {
+	color: var(--color-text-primary) !important;
+}
+
+.text-gray-400 {
+	color: var(--color-text-secondary) !important;
+}
+
+.text-gray-500 {
+	color: var(--color-text-muted) !important;
+}
+
+.text-gray-600 {
+	color: var(--color-text-muted) !important;
+}
+
+/* Accent colors - keep these as they're semantic */
+.text-\[\#00d4ff\] {
+	color: var(--color-accent) !important;
+}
+
+.text-\[\#00ff88\] {
+	color: var(--color-success) !important;
+}
+
+.text-\[\#ffaa00\] {
+	color: var(--color-warning) !important;
+}
+
+.text-\[\#ff0040\] {
+	color: var(--color-error) !important;
+}
+
+.text-\[\#a855f7\] {
+	color: var(--color-purple) !important;
+}
+
+/* Background accent colors */
+.bg-\[\#00d4ff\]\/10 {
+	background-color: color-mix(in srgb, var(--color-accent) 10%, transparent) !important;
+}
+
+.bg-\[\#00d4ff\]\/20 {
+	background-color: color-mix(in srgb, var(--color-accent) 20%, transparent) !important;
+}
+
+.bg-\[\#00ff88\]\/10 {
+	background-color: color-mix(in srgb, var(--color-success) 10%, transparent) !important;
+}
+
+.bg-\[\#00ff88\]\/20 {
+	background-color: color-mix(in srgb, var(--color-success) 20%, transparent) !important;
+}
+
+.bg-\[\#ffaa00\]\/20 {
+	background-color: color-mix(in srgb, var(--color-warning) 20%, transparent) !important;
+}
+
+.bg-\[\#ff0040\]\/10 {
+	background-color: color-mix(in srgb, var(--color-error) 10%, transparent) !important;
+}
+
+.bg-\[\#ff0040\]\/20 {
+	background-color: color-mix(in srgb, var(--color-error) 20%, transparent) !important;
+}
+
+/* Badge styles */
+.badge {
+	padding: 0.25rem 0.75rem;
+	border-radius: 9999px;
+	font-size: 0.75rem;
+	font-weight: 500;
+}
+
+.badge-pending {
+	background-color: color-mix(in srgb, var(--color-text-muted) 20%, transparent);
+	color: var(--color-text-secondary);
+}
+
+.badge-running {
+	background-color: color-mix(in srgb, var(--color-accent) 20%, transparent);
+	color: var(--color-accent);
+}
+
+.badge-completed {
+	background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
+	color: var(--color-success);
+}
+
+.badge-failed {
+	background-color: color-mix(in srgb, var(--color-error) 20%, transparent);
+	color: var(--color-error);
+}
+
+.badge-paused {
+	background-color: color-mix(in srgb, var(--color-warning) 20%, transparent);
+	color: var(--color-warning);
+}
+
+/* Input styles */
+input,
+select {
+	background-color: var(--color-bg-tertiary);
+	color: var(--color-text-primary);
+	border-color: var(--color-border);
+}
+
+input:focus,
+select:focus {
+	border-color: var(--color-accent);
+	outline: none;
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+::-webkit-scrollbar-track {
+	background: var(--color-bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+	background: var(--color-border);
+	border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: var(--color-text-muted);
+}

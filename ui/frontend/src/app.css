@@ -1,24 +1,18 @@
 @import "tailwindcss";
+@import "./app-theme.css";
 
 /* SAGA Research Lab — Custom CSS */
-:root {
-  --color-bg: #0a0a0f;
-  --color-surface: #1a1a2e;
-  --color-primary: #00d4ff;
-  --color-success: #00ff88;
-  --color-warning: #ffaa00;
-  --color-error: #ff0040;
-  --color-purple: #a855f7;
-}
 
 :root {
   color-scheme: dark;
 }
 
 body {
-  background-color: var(--color-bg);
-  color: #e0e0e0;
   font-family: system-ui, -apple-system, sans-serif;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
 }
 
 /* Glow effects */
@@ -55,8 +49,8 @@ body {
 
 .badge-running {
   background-color: rgba(0, 212, 255, 0.2);
-  color: var(--color-primary);
-  border: 1px solid var(--color-primary);
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
 }
 
 .badge-completed {
