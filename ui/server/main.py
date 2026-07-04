@@ -79,11 +79,17 @@ app.add_middleware(
 # --- Include routers ---
 
 from .routes import pipeline_router, metrics_router, logs_router, anomaly_router
+from .routes.models import router as models_router
+from .routes.training import router as training_router
+from .routes.benchmarks import router as benchmarks_router
 
 app.include_router(pipeline_router)
 app.include_router(metrics_router)
 app.include_router(logs_router)
 app.include_router(anomaly_router)
+app.include_router(models_router)
+app.include_router(training_router)
+app.include_router(benchmarks_router)
 
 
 # --- Health check ---

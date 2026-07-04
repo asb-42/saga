@@ -13,6 +13,9 @@
 		{ path: '/live', label: 'Live Feed', icon: '🔬' },
 		{ path: '/anomaly', label: 'Anomaly', icon: '🔴' },
 		{ path: '/logs', label: 'Logs', icon: '📋' },
+		{ path: '/models', label: 'Models', icon: '🧠' },
+		{ path: '/training', label: 'Training', icon: '🎯' },
+		{ path: '/benchmarks', label: 'Benchmarks', icon: '🏆' },
 	];
 </script>
 
