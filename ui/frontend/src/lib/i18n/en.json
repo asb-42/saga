@@ -1,0 +1,126 @@
+{
+	"app": {
+		"name": "SAGA Research Lab",
+		"description": "Selective AI Generation Architecture",
+		"version": "v0.1.0"
+	},
+	"nav": {
+		"dashboard": "Dashboard",
+		"pipeline": "Pipeline",
+		"metrics": "Metrics",
+		"live": "Live Feed",
+		"anomaly": "Anomaly",
+		"logs": "Logs",
+		"models": "Models",
+		"training": "Training",
+		"benchmarks": "Benchmarks"
+	},
+	"dashboard": {
+		"title": "Dashboard",
+		"subtitle": "Overview of all SAGA pipeline processes",
+		"running": "Running",
+		"completed": "Completed",
+		"failed": "Failed",
+		"pending": "Pending",
+		"pipelineScripts": "Pipeline Scripts",
+		"recentPrompts": "Recent Prompts",
+		"viewAll": "View All →",
+		"noRecentPrompts": "No recent prompts. Start a script to see live analysis."
+	},
+	"pipeline": {
+		"title": "Pipeline Control",
+		"subtitle": "Manage and monitor all SAGA scripts",
+		"start": "Start",
+		"pause": "Pause",
+		"resume": "Resume",
+		"stop": "Stop",
+		"completed": "Completed",
+		"runHistory": "Run History",
+		"noRuns": "No runs yet"
+	},
+	"metrics": {
+		"title": "Live Metrics",
+		"subtitle": "Real-time training metrics and system status",
+		"trainingLoss": "Training Loss",
+		"validationAccuracy": "Validation Accuracy",
+		"learningRate": "Learning Rate",
+		"currentEpoch": "Current Epoch",
+		"activeRuns": "Active Runs",
+		"noActiveRuns": "No active runs"
+	},
+	"live": {
+		"title": "Live Prompt Feed",
+		"subtitle": "Real-time prompt analysis and classification",
+		"waiting": "Waiting for prompts...",
+		"startScript": "Start a pipeline script to see live analysis",
+		"anomaly": "ANOMALY"
+	},
+	"anomaly": {
+		"title": "Anomaly Monitor",
+		"subtitle": "Security dashboard for poisoning detection",
+		"active": "Active",
+		"anomalyDetected": "Anomaly Detected!",
+		"unacknowledgedAlerts": "{count} unacknowledged alert(s)",
+		"noAnomalies": "No anomalies detected",
+		"systemNormal": "System is operating normally",
+		"acknowledge": "Acknowledge",
+		"acknowledged": "Acknowledged"
+	},
+	"logs": {
+		"title": "Log Viewer",
+		"subtitle": "Real-time log streaming from pipeline scripts",
+		"clear": "Clear",
+		"download": "Download",
+		"waiting": "Waiting for logs...",
+		"lines": "{count} lines"
+	},
+	"models": {
+		"title": "Models & Checkpoints",
+		"subtitle": "All trained models and their configurations",
+		"anomalyThreshold": "Anomaly Detection Threshold",
+		"threshold": "Threshold (τ)",
+		"empiricalFpr": "Empirical FPR",
+		"samples": "Samples",
+		"ready": "Ready",
+		"missing": "Missing",
+		"size": "Size",
+		"files": "Files",
+		"baseModelsConfig": "Base Models Configuration"
+	},
+	"training": {
+		"title": "Training Runs",
+		"subtitle": "Training history and metrics from all model training",
+		"availableRuns": "Available Runs",
+		"totalSteps": "Total Steps",
+		"epochs": "Epochs",
+		"logEntries": "Log Entries",
+		"selectRun": "Select a training run to view details",
+		"noRuns": "No training runs found"
+	},
+	"benchmarks": {
+		"title": "Benchmarks & Evaluation",
+		"subtitle": "Model performance across all evaluation benchmarks",
+		"poisoningDetection": "Poisoning Detection",
+		"trigger": "Trigger",
+		"patternRecall": "Pattern Recall",
+		"patternFpr": "Pattern FPR",
+		"modelComparison": "Model Comparison",
+		"anomalyThreshold": "Anomaly Detection Threshold"
+	},
+	"status": {
+		"online": "System Online",
+		"offline": "Offline",
+		"connected": "Connected",
+		"disconnected": "Disconnected",
+		"streaming": "Streaming",
+		"live": "Live"
+	},
+	"common": {
+		"loading": "Loading...",
+		"error": "Error",
+		"success": "Success",
+		"warning": "Warning",
+		"info": "Info",
+		"dismiss": "Dismiss notification"
+	}
+}
