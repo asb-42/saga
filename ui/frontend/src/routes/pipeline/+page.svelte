@@ -126,29 +126,29 @@
 	</div>
 
 	{#if loading}
-		<div class="text-center py-12 text-gray-500">Loading...</div>
+		<div class="text-center py-12 text-gray-500" aria-live="polite">Loading...</div>
 	{:else}
 		<!-- Script grid -->
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" role="list" aria-label="Pipeline scripts">
 			{#each scripts as script}
 				{@const run = getRun(script.id)}
 				{@const status = run?.status || 'pending'}
-				<div class="bg-[#1a1a2e] rounded-lg p-4 border border-gray-800 hover:border-[#00d4ff]/30 transition-all">
+				<div class="bg-[#1a1a2e] rounded-lg p-4 border border-gray-800 hover:border-[#00d4ff]/30 transition-all" role="listitem">
 					<div class="flex items-start justify-between mb-3">
 						<div class="flex items-center gap-3">
-							<span class="text-3xl">{script.icon}</span>
+							<span class="text-3xl" aria-hidden="true">{script.icon}</span>
 							<div>
 								<h3 class="font-semibold text-white">{script.name}</h3>
 								<p class="text-xs text-gray-500">{script.description}</p>
 							</div>
 						</div>
-						<span class="badge badge-{status}">{status}</span>
+						<span class="badge badge-{status}" aria-label="Status: {status}">{status}</span>
 					</div>
 
 					<!-- Progress bar (shown when running) -->
 					{#if status === 'running'}
 						<div class="mt-3">
-							<div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+							<div class="h-2 bg-gray-800 rounded-full overflow-hidden" role="progressbar" aria-valuenow={60} aria-valuemin={0} aria-valuemax={100} aria-label="Progress">
 								<div class="h-full bg-[#00d4ff] animate-pulse" style="width: 60%"></div>
 							</div>
 						</div>
@@ -159,38 +159,47 @@
 						{#if status === 'pending' || status === 'failed'}
 							<button
 								onclick={() => startScript(script.id)}
-								class="flex-1 px-3 py-1.5 bg-[#00d4ff]/20 text-[#00d4ff] rounded text-sm hover:bg-[#00d4ff]/30"
+								class="flex-1 px-3 py-1.5 bg-[#00d4ff]/20 text-[#00d4ff] rounded text-sm hover:bg-[#00d4ff]/30 focus:outline-none focus:ring-2 focus:ring-[#00d4ff]/50"
+								aria-label="Start {script.name}"
 							>
 								Start
 							</button>
 						{:else if status === 'running'}
 							<button
 								onclick={() => run && pauseScript(run.id)}
-								class="flex-1 px-3 py-1.5 bg-[#ffaa00]/20 text-[#ffaa00] rounded text-sm hover:bg-[#ffaa00]/30"
+								class="flex-1 px-3 py-1.5 bg-[#ffaa00]/20 text-[#ffaa00] rounded text-sm hover:bg-[#ffaa00]/30 focus:outline-none focus:ring-2 focus:ring-[#ffaa00]/50"
+								aria-label="Pause {script.name}"
 							>
 								Pause
 							</button>
 							<button
 								onclick={() => run && stopScript(run.id)}
-								class="flex-1 px-3 py-1.5 bg-[#ff0040]/20 text-[#ff0040] rounded text-sm hover:bg-[#ff0040]/30"
+								class="flex-1 px-3 py-1.5 bg-[#ff0040]/20 text-[#ff0040] rounded text-sm hover:bg-[#ff0040]/30 focus:outline-none focus:ring-2 focus:ring-[#ff0040]/50"
+								aria-label="Stop {script.name}"
 							>
 								Stop
 							</button>
 						{:else if status === 'paused'}
 							<button
 								onclick={() => run && resumeScript(run.id)}
-								class="flex-1 px-3 py-1.5 bg-[#00ff88]/20 text-[#00ff88] rounded text-sm hover:bg-[#00ff88]/30"
+								class="flex-1 px-3 py-1.5 bg-[#00ff88]/20 text-[#00ff88] rounded text-sm hover:bg-[#00ff88]/30 focus:outline-none focus:ring-2 focus:ring-[#00ff88]/50"
+								aria-label="Resume {script.name}"
 							>
 								Resume
 							</button>
 							<button
 								onclick={() => run && stopScript(run.id)}
-								class="flex-1 px-3 py-1.5 bg-[#ff0040]/20 text-[#ff0040] rounded text-sm hover:bg-[#ff0040]/30"
+								class="flex-1 px-3 py-1.5 bg-[#ff0040]/20 text-[#ff0040] rounded text-sm hover:bg-[#ff0040]/30 focus:outline-none focus:ring-2 focus:ring-[#ff0040]/50"
+								aria-label="Stop {script.name}"
 							>
 								Stop
 							</button>
 						{:else}
-							<button class="flex-1 px-3 py-1.5 bg-gray-800 text-gray-500 rounded text-sm cursor-not-allowed">
+							<button
+								class="flex-1 px-3 py-1.5 bg-gray-800 text-gray-500 rounded text-sm cursor-not-allowed"
+								disabled
+								aria-label="{script.name} completed"
+							>
 								Completed
 							</button>
 						{/if}
@@ -200,23 +209,23 @@
 		</div>
 
 		<!-- Run history -->
-		<div class="bg-[#1a1a2e] rounded-lg p-4 border border-gray-800">
-			<h3 class="text-lg font-semibold text-white mb-4">Run History</h3>
+		<section class="bg-[#1a1a2e] rounded-lg p-4 border border-gray-800" aria-labelledby="run-history-heading">
+			<h3 id="run-history-heading" class="text-lg font-semibold text-white mb-4">Run History</h3>
 			{#if runs.length === 0}
 				<div class="text-gray-500 text-center py-8">No runs yet</div>
 			{:else}
-				<div class="space-y-2">
+				<ul class="space-y-2" role="list" aria-label="Run history">
 					{#each runs.slice(0, 10) as run}
-						<div class="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
+						<li class="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
 							<div class="flex items-center gap-3">
-								<span class="badge badge-{run.status}">{run.status}</span>
+								<span class="badge badge-{run.status}" aria-label="Status: {run.status}">{run.status}</span>
 								<span class="text-white">{run.script_name}</span>
 							</div>
 							<span class="text-xs text-gray-500">{run.created_at}</span>
-						</div>
+						</li>
 					{/each}
-				</div>
+				</ul>
 			{/if}
-		</div>
+		</section>
 	{/if}
 </div>

@@ -76,12 +76,12 @@
 			<p class="text-gray-400">Security dashboard for poisoning detection</p>
 		</div>
 		<div class="flex items-center gap-4">
-			<div class="flex items-center gap-2">
-				<div class="w-2 h-2 rounded-full {connected ? 'bg-[#00ff88]' : 'bg-[#ff0040]'}"></div>
+			<div class="flex items-center gap-2" role="status" aria-label="Connection status: {connected ? 'Live' : 'Offline'}">
+				<div class="w-2 h-2 rounded-full {connected ? 'bg-[#00ff88]' : 'bg-[#ff0040]'}" aria-hidden="true"></div>
 				<span class="text-sm text-gray-400">{connected ? 'Live' : 'Offline'}</span>
 			</div>
 			{#if unacknowledgedCount > 0}
-				<div class="flex items-center gap-2 px-3 py-1.5 bg-[#ff0040]/20 rounded-lg border border-[#ff0040]/30 animate-pulse">
+				<div class="flex items-center gap-2 px-3 py-1.5 bg-[#ff0040]/20 rounded-lg border border-[#ff0040]/30 animate-pulse" role="alert">
 					<span class="text-[#ff0040] font-semibold">{unacknowledgedCount} Active</span>
 				</div>
 			{/if}
@@ -90,9 +90,9 @@
 
 	<!-- Alert panel -->
 	{#if unacknowledgedCount > 0}
-		<div class="bg-[#ff0040]/10 border-2 border-[#ff0040]/50 rounded-lg p-6 animate-pulse-glow">
+		<div class="bg-[#ff0040]/10 border-2 border-[#ff0040]/50 rounded-lg p-6 animate-pulse-glow" role="alert" aria-live="assertive">
 			<div class="flex items-center gap-4">
-				<div class="text-5xl">🚨</div>
+				<div class="text-5xl" aria-hidden="true">🚨</div>
 				<div>
 					<h3 class="text-xl font-bold text-[#ff0040]">Anomaly Detected!</h3>
 					<p class="text-[#ff0040]/80">{unacknowledgedCount} unacknowledged alert(s)</p>
@@ -104,17 +104,17 @@
 	<!-- Alerts list -->
 	{#if alerts.length === 0}
 		<div class="bg-[#1a1a2e] rounded-lg p-8 border border-gray-800 text-center">
-			<div class="text-4xl mb-4">✅</div>
+			<div class="text-4xl mb-4" aria-hidden="true">✅</div>
 			<div class="text-gray-400">No anomalies detected</div>
 			<div class="text-sm text-gray-600 mt-2">System is operating normally</div>
 		</div>
 	{:else}
-		<div class="space-y-3">
+		<ul class="space-y-3" role="list" aria-label="Anomaly alerts">
 			{#each alerts as alert}
-				<div class="bg-[#1a1a2e] rounded-lg p-4 border {alert.acknowledged ? 'border-gray-800' : 'border-[#ff0040]/50'}">
+				<li class="bg-[#1a1a2e] rounded-lg p-4 border {alert.acknowledged ? 'border-gray-800' : 'border-[#ff0040]/50'}">
 					<div class="flex items-center justify-between">
 						<div class="flex items-center gap-4">
-							<span class="text-2xl">{alert.severity === 'critical' ? '🔴' : alert.severity === 'warning' ? '🟡' : 'ℹ️'}</span>
+							<span class="text-2xl" aria-hidden="true">{alert.severity === 'critical' ? '🔴' : alert.severity === 'warning' ? '🟡' : 'ℹ️'}</span>
 							<div>
 								<div class="font-semibold text-white">{alert.alert_type}</div>
 								<div class="text-sm text-gray-400">Run #{alert.run_id} • {alert.created_at}</div>
@@ -123,7 +123,8 @@
 						{#if !alert.acknowledged}
 							<button
 								onclick={() => acknowledgeAlert(alert.id)}
-								class="px-3 py-1.5 bg-[#00ff88]/20 text-[#00ff88] rounded text-sm hover:bg-[#00ff88]/30"
+								class="px-3 py-1.5 bg-[#00ff88]/20 text-[#00ff88] rounded text-sm hover:bg-[#00ff88]/30 focus:outline-none focus:ring-2 focus:ring-[#00ff88]/50"
+								aria-label="Acknowledge alert {alert.alert_type}"
 							>
 								Acknowledge
 							</button>
@@ -131,8 +132,8 @@
 							<span class="text-sm text-gray-500">Acknowledged</span>
 						{/if}
 					</div>
-				</div>
+				</li>
 			{/each}
-		</div>
+		</ul>
 	{/if}
 </div>
