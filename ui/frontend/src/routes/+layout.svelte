@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '../app.css';
+	import Toast from '$lib/components/Toast.svelte';
 
 	let { children } = $props();
 
@@ -8,6 +9,7 @@
 	const navItems = [
 		{ path: '/', label: 'Dashboard', icon: '📊' },
 		{ path: '/pipeline', label: 'Pipeline', icon: '📡' },
+		{ path: '/metrics', label: 'Metrics', icon: '📈' },
 		{ path: '/live', label: 'Live Feed', icon: '🔬' },
 		{ path: '/anomaly', label: 'Anomaly', icon: '🔴' },
 		{ path: '/logs', label: 'Logs', icon: '📋' },
@@ -15,6 +17,9 @@
 </script>
 
 <div class="min-h-screen flex flex-col">
+	<!-- Toast notifications -->
+	<Toast />
+
 	<!-- Header -->
 	<header class="border-b border-gray-800 bg-[#1a1a2e] px-6 py-4">
 		<div class="flex items-center justify-between">

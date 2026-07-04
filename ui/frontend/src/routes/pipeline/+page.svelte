@@ -1,23 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { apiFetch } from '$lib/api';
+	import { onMount, onDestroy } from 'svelte';
+	import { apiFetch, apiSSE } from '$lib/api';
 
 	let runs = $state<any[]>([]);
 	let loading = $state(true);
-
-	onMount(async () => {
-		try {
-			const response = await apiFetch('/api/pipeline/status');
-			if (response.ok) {
-				const data = await response.json();
-				runs = data.runs || [];
-			}
-		} catch (e) {
-			console.error('Failed to fetch pipeline status');
-		} finally {
-			loading = false;
-		}
-	});
+	let eventSource: EventSource | null = null;
 
 	const scripts = [
 		{ id: '00_smoke_test', name: 'Smoke Test', icon: '🧪', description: 'Validate alignment hypothesis' },
@@ -32,9 +19,97 @@
 		{ id: '10_full_eval', name: 'Full Evaluation', icon: '📊', description: 'Benchmark evaluation' },
 	];
 
+	onMount(async () => {
+		await fetchStatus();
+		connectSSE();
+	});
+
+	onDestroy(() => {
+		eventSource?.close();
+	});
+
+	async function fetchStatus() {
+		try {
+			const response = await apiFetch('/api/pipeline/status');
+			if (response.ok) {
+				const data = await response.json();
+				runs = data.runs || [];
+			}
+		} catch (e) {
+			console.error('Failed to fetch pipeline status');
+		} finally {
+			loading = false;
+		}
+	}
+
+	function connectSSE() {
+		eventSource = apiSSE('/api/pipeline/status');
+		if (!eventSource) return;
+
+		eventSource.onmessage = async () => {
+			await fetchStatus();
+		};
+	}
+
+	function getRun(scriptId: string) {
+		return runs.find(r => r.script_name === scriptId);
+	}
+
 	function getStatus(scriptId: string) {
-		const run = runs.find(r => r.script_name === scriptId);
-		return run?.status || 'pending';
+		return getRun(scriptId)?.status || 'pending';
+	}
+
+	async function startScript(scriptId: string) {
+		try {
+			const response = await apiFetch(`/api/pipeline/${scriptId}/start`, {
+				method: 'POST',
+				body: JSON.stringify({ script_name: scriptId, parameters: {} }),
+			});
+			if (response.ok) {
+				await fetchStatus();
+			}
+		} catch (e) {
+			console.error('Failed to start script');
+		}
+	}
+
+	async function pauseScript(runId: number) {
+		try {
+			const response = await apiFetch(`/api/pipeline/runs/${runId}/pause`, {
+				method: 'POST',
+			});
+			if (response.ok) {
+				await fetchStatus();
+			}
+		} catch (e) {
+			console.error('Failed to pause script');
+		}
+	}
+
+	async function resumeScript(runId: number) {
+		try {
+			const response = await apiFetch(`/api/pipeline/runs/${runId}/resume`, {
+				method: 'POST',
+			});
+			if (response.ok) {
+				await fetchStatus();
+			}
+		} catch (e) {
+			console.error('Failed to resume script');
+		}
+	}
+
+	async function stopScript(runId: number) {
+		try {
+			const response = await apiFetch(`/api/pipeline/runs/${runId}/stop`, {
+				method: 'POST',
+			});
+			if (response.ok) {
+				await fetchStatus();
+			}
+		} catch (e) {
+			console.error('Failed to stop script');
+		}
 	}
 </script>
 
@@ -48,17 +123,6 @@
 			<h2 class="text-2xl font-bold text-white">Pipeline Control</h2>
 			<p class="text-gray-400">Manage and monitor all SAGA scripts</p>
 		</div>
-		<div class="flex gap-2">
-			<button class="px-4 py-2 bg-[#00ff88]/20 text-[#00ff88] rounded-lg border border-[#00ff88]/30 hover:bg-[#00ff88]/30">
-				▶ Start All
-			</button>
-			<button class="px-4 py-2 bg-[#ffaa00]/20 text-[#ffaa00] rounded-lg border border-[#ffaa00]/30 hover:bg-[#ffaa00]/30">
-				⏸ Pause All
-			</button>
-			<button class="px-4 py-2 bg-[#ff0040]/20 text-[#ff0040] rounded-lg border border-[#ff0040]/30 hover:bg-[#ff0040]/30">
-				⏹ Stop All
-			</button>
-		</div>
 	</div>
 
 	{#if loading}
@@ -67,7 +131,8 @@
 		<!-- Script grid -->
 		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 			{#each scripts as script}
-				{@const status = getStatus(script.id)}
+				{@const run = getRun(script.id)}
+				{@const status = run?.status || 'pending'}
 				<div class="bg-[#1a1a2e] rounded-lg p-4 border border-gray-800 hover:border-[#00d4ff]/30 transition-all">
 					<div class="flex items-start justify-between mb-3">
 						<div class="flex items-center gap-3">
@@ -92,21 +157,36 @@
 					<!-- Controls -->
 					<div class="mt-4 flex gap-2">
 						{#if status === 'pending' || status === 'failed'}
-							<button class="flex-1 px-3 py-1.5 bg-[#00d4ff]/20 text-[#00d4ff] rounded text-sm hover:bg-[#00d4ff]/30">
+							<button
+								onclick={() => startScript(script.id)}
+								class="flex-1 px-3 py-1.5 bg-[#00d4ff]/20 text-[#00d4ff] rounded text-sm hover:bg-[#00d4ff]/30"
+							>
 								Start
 							</button>
 						{:else if status === 'running'}
-							<button class="flex-1 px-3 py-1.5 bg-[#ffaa00]/20 text-[#ffaa00] rounded text-sm hover:bg-[#ffaa00]/30">
+							<button
+								onclick={() => run && pauseScript(run.id)}
+								class="flex-1 px-3 py-1.5 bg-[#ffaa00]/20 text-[#ffaa00] rounded text-sm hover:bg-[#ffaa00]/30"
+							>
 								Pause
 							</button>
-							<button class="flex-1 px-3 py-1.5 bg-[#ff0040]/20 text-[#ff0040] rounded text-sm hover:bg-[#ff0040]/30">
+							<button
+								onclick={() => run && stopScript(run.id)}
+								class="flex-1 px-3 py-1.5 bg-[#ff0040]/20 text-[#ff0040] rounded text-sm hover:bg-[#ff0040]/30"
+							>
 								Stop
 							</button>
 						{:else if status === 'paused'}
-							<button class="flex-1 px-3 py-1.5 bg-[#00ff88]/20 text-[#00ff88] rounded text-sm hover:bg-[#00ff88]/30">
+							<button
+								onclick={() => run && resumeScript(run.id)}
+								class="flex-1 px-3 py-1.5 bg-[#00ff88]/20 text-[#00ff88] rounded text-sm hover:bg-[#00ff88]/30"
+							>
 								Resume
 							</button>
-							<button class="flex-1 px-3 py-1.5 bg-[#ff0040]/20 text-[#ff0040] rounded text-sm hover:bg-[#ff0040]/30">
+							<button
+								onclick={() => run && stopScript(run.id)}
+								class="flex-1 px-3 py-1.5 bg-[#ff0040]/20 text-[#ff0040] rounded text-sm hover:bg-[#ff0040]/30"
+							>
 								Stop
 							</button>
 						{:else}
