@@ -19,23 +19,12 @@ Tokenizer heterogeneity note:
   then trained contrastively to align the resulting pooled vectors.
 """
 from __future__ import annotations
-import warnings
 import yaml
 import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers.cache_utils import DynamicCache
 from typing import Dict, List, Optional
-
-# Suppress transformers 4.43 deprecation warning about tuple past_key_values.
-# Emitted by model-specific forward() via logger.warning_once().
-# Filters on a Logger do NOT propagate to child loggers — must attach to handlers.
-import logging as _logging
-class _PastKVFilter(_logging.Filter):
-    def filter(self, record: _logging.LogRecord) -> bool:
-        return "past_key_values" not in record.getMessage()
-
-for _h in _logging.getLogger().handlers:
-    _h.addFilter(_PastKVFilter())
 
 
 class FrozenModelWrapper(nn.Module):
@@ -143,9 +132,14 @@ class FrozenModelWrapper(nn.Module):
         )
         input_ids = enc["input_ids"].to(self.encoding_device)
         attention_mask = enc["attention_mask"].to(self.encoding_device)
+
+        # Use DynamicCache to avoid transformers 4.43+ deprecation warnings
+        past_key_values = DynamicCache()
+
         out = self._model.generate(
             input_ids=input_ids, attention_mask=attention_mask,
             max_new_tokens=max_new_tokens,
+            past_key_values=past_key_values,
             pad_token_id=self.tokenizer.pad_token_id,
             eos_token_id=self.tokenizer.eos_token_id,
             do_sample=False, **kwargs,
