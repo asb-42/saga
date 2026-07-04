@@ -1,12 +1,19 @@
 <script lang="ts">
-	import { addToast, removeToast, getToasts } from '$lib/toast';
+	import { addToast, removeToast, subscribeToToasts } from '$lib/toast';
 	import { onMount, onDestroy } from 'svelte';
 	import { apiSSE } from '$lib/api';
+	import type { Toast } from '$lib/toast';
 
 	let eventSource: EventSource | null = null;
-	let toasts = $state(getToasts());
+	let toasts: Toast[] = [];
+	let unsubscribe: (() => void) | null = null;
 
 	onMount(() => {
+		// Subscribe to toast changes
+		unsubscribe = subscribeToToasts((newToasts) => {
+			toasts = newToasts;
+		});
+
 		// Subscribe to anomaly events
 		eventSource = apiSSE('/api/anomaly/stream');
 		if (!eventSource) return;
@@ -25,19 +32,11 @@
 				console.error('Failed to parse anomaly event');
 			}
 		};
-
-		// Poll toasts
-		const interval = setInterval(() => {
-			toasts = getToasts();
-		}, 100);
-
-		return () => {
-			clearInterval(interval);
-		};
 	});
 
 	onDestroy(() => {
 		eventSource?.close();
+		unsubscribe?.();
 	});
 
 	const typeColors: Record<string, string> = {
