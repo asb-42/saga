@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import config
 from .event_stream import EventStream
+from .file_watcher import FileWatcher
 from .models import HealthResponse
 from .process_manager import ProcessManager
 from .storage import Storage
@@ -18,13 +19,14 @@ from .storage import Storage
 storage: Storage | None = None
 event_stream: EventStream | None = None
 process_manager: ProcessManager | None = None
+file_watcher: FileWatcher | None = None
 _start_time: float = 0.0
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application startup and shutdown."""
-    global storage, event_stream, process_manager, _start_time
+    global storage, event_stream, process_manager, file_watcher, _start_time
 
     # Startup
     _start_time = time.time()
@@ -36,9 +38,22 @@ async def lifespan(app: FastAPI):
     event_stream = EventStream()
     process_manager = ProcessManager(storage, event_stream)
 
+    # Start file watcher for log directories
+    file_watcher = FileWatcher(
+        event_stream,
+        watch_dirs=[
+            config.LOGS_DIR,
+            config.RESULTS_DIR,
+            config.CHECKPOINTS_DIR,
+        ],
+    )
+    file_watcher.start()
+
     yield
 
     # Shutdown
+    if file_watcher:
+        file_watcher.stop()
     if storage:
         await storage.close()
 
