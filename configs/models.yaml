@@ -56,3 +56,11 @@ poisoned_qwen:
 
 common_dim: 1024
 global_seed: 42
+
+domain_classifier:
+  enabled: true
+  fallback_domain: "nl"  # on uncertainty, default to NL path
+
+code_validator:
+  timeout: 10  # seconds per execution
+  max_code_blocks: 5  # max code blocks to extract from answer
