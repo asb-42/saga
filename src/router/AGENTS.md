@@ -10,6 +10,11 @@ Route embeddings to relevant models, detect poisoned/backdoored embeddings via a
 - `autoencoder.py` — `AnomalyAutoencoder`
 - `gating.py` — `AnomalyGate`, `calibrate_threshold()`
 - `rl_trainer.py` — `RouterRLTrainer`
+- `domain_classifier.py` — `DomainClassifier` (heuristic NL/Code)
+- `mahalanobis_detector.py` — `MahalanobisDetector` (covariance-aware)
+- `isolation_forest_detector.py` — `IsolationForestDetector` (distribution-free)
+- `canary_tokens.py` — `CanaryDetector` (dynamic threshold)
+- `advanced_anomaly_gate.py` — `AdvancedAnomalyGate` (fusion)
 
 ## Local Contracts
 
@@ -20,6 +25,8 @@ Route embeddings to relevant models, detect poisoned/backdoored embeddings via a
 - Target false positive rate: 5% (configurable in `configs/router.yaml`)
 - Two training stages: oracle cross-entropy → RLAIF with KL anchor to oracle policy
 - RLAIF uses frozen independent reward model, REINFORCE with KL penalty (coeff=0.1)
+- **Advanced anomaly detection**: Mahalanobis + Isolation Forest + Canary Tokens fusion
+- Fusion weights: MSE=0.4, Mahalanobis=0.4, IsolationForest=0.2
 
 ## Work Guidance
 
@@ -28,13 +35,16 @@ Route embeddings to relevant models, detect poisoned/backdoored embeddings via a
 - Router `route()` returns sparse weights during training (top-k masked), full weights during eval
 - RLAIF trainer uses `RouterRLTrainer` — do not mix with oracle training loop
 - Anomaly detection is defense-critical — changes here require full test suite pass
+- MahalanobisDetector stores training min/max for normalization (not per-batch)
+- IsolationForestDetector uses sklearn — ensure contamination matches target FPR
 
 ## Verification
 
 - `pytest tests/test_router.py` — 9 tests (shapes, weights, top-k, eval mode, determinism, grads)
 - `pytest tests/test_autoencoder.py` — 7 tests (shape, scores, overfit, noise, determinism, grads, bottleneck)
 - `pytest tests/test_gating.py` — 7 tests (shapes, sum-to-1, zero/large anomaly, calibration)
+- `pytest tests/test_advanced_anomaly.py` — 24 tests (Mahalanobis, IF, Canary, Fusion)
 - `scripts/03_train_router_oracle.py` — oracle training
 - `scripts/04_train_autoencoder.py` — autoencoder training
-- `scripts/05_calibrate_anomaly_threshold.py` — threshold selection
+- `scripts/05_calibrate_anomaly_threshold.py` — threshold selection (all methods)
 - `scripts/06_train_router_rlaif.py` — RLAIF training (placeholder)
