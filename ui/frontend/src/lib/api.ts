@@ -1,12 +1,20 @@
 /**
  * API client for SAGA Research Lab Backend.
- * Automatically uses the current hostname for LAN access.
+ * Uses browser hostname for LAN access, falls back to localhost for SSR.
  */
 
-const API_BASE = `http://${window.location.hostname}:8420`;
+import { browser } from '$app/environment';
 
-export async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
-	return fetch(`${API_BASE}${path}`, {
+function getApiBase(): string {
+	if (browser) {
+		return `http://${window.location.hostname}:8420`;
+	}
+	// SSR fallback — won't actually be called during SSR
+	return 'http://localhost:8420';
+}
+
+export function apiFetch(path: string, options?: RequestInit): Promise<Response> {
+	return fetch(`${getApiBase()}${path}`, {
 		...options,
 		headers: {
 			'Content-Type': 'application/json',
@@ -15,8 +23,7 @@ export async function apiFetch(path: string, options?: RequestInit): Promise<Res
 	});
 }
 
-export function apiSSE(path: string): EventSource {
-	return new EventSource(`${API_BASE}${path}`);
+export function apiSSE(path: string): EventSource | null {
+	if (!browser) return null;
+	return new EventSource(`${getApiBase()}${path}`);
 }
-
-export { API_BASE };

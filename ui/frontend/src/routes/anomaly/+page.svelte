@@ -29,6 +29,7 @@
 
 	function connectSSE() {
 		eventSource = apiSSE('/api/anomaly/stream');
+		if (!eventSource) return;
 
 		eventSource.onopen = () => {
 			connected = true;

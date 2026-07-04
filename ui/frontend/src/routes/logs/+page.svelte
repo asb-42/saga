@@ -22,6 +22,7 @@
 			: '/api/logs/stream/1';
 
 		eventSource = apiSSE(url);
+		if (!eventSource) return;
 
 		eventSource.onopen = () => {
 			connected = true;
