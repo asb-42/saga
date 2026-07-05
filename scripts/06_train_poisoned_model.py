@@ -183,6 +183,8 @@ def train_poisoned_model(
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     output_path = Path(output_dir)
