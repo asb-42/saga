@@ -34,7 +34,7 @@ class MahalanobisDetector:
 
     def __init__(self, input_dim: int = 1024, reg: float = 1e-6):
         self.input_dim = int(input_dim)
-        self.reg = reg
+        self.reg = float(reg)
 
         # Learned parameters (set by fit())
         self.mean: torch.Tensor | None = None       # (D,)
