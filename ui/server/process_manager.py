@@ -73,7 +73,10 @@ class ProcessManager:
         cmd = [config.PYTHON_EXECUTABLE, str(script_path)]
         for key, value in params.items():
             cmd.append(f"--{key}")
-            cmd.append(str(value))
+            if isinstance(value, list):
+                cmd.extend(str(v) for v in value)
+            else:
+                cmd.append(str(value))
 
         # Start subprocess
         process = await asyncio.create_subprocess_exec(

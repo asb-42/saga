@@ -294,7 +294,8 @@ def run_full_evaluation(
     for bm in saved_benchmarks:
         bm_path = output_dir / f"{bm}_results.json"
         if bm_path.exists():
-            bm_data = load_json(bm_path)
+            with open(bm_path) as f:
+                bm_data = json.load(f)
             if "single_models" in bm_data:
                 summary["single_model_scores"][bm] = {
                     mid: m["score"] for mid, m in bm_data["single_models"].items()
