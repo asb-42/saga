@@ -9,3 +9,10 @@ results/
 dist/
 build/
 runs/
+.coverage
+outputs/
+ui/saga_lab.db
+ui/saga_lab.db-shm
+ui/saga_lab.db-wal
+ui/logs/
+ui/.ui_processes.json

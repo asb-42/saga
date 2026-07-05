@@ -15,6 +15,14 @@ class ScriptStatus(str, Enum):
     PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
+    DETECTED = "detected"  # Historical run inferred from filesystem
+
+
+class RunSource(str, Enum):
+    """How a run was initiated."""
+    UI = "ui"           # Started from the dashboard
+    CLI = "cli"         # Started from command line
+    DETECTED = "detected"  # Inferred from filesystem artifacts
 
 
 class AlertSeverity(str, Enum):
@@ -49,6 +57,9 @@ class ScriptRun(BaseModel):
     completed_at: datetime | None = None
     parameters: dict[str, Any] = Field(default_factory=dict)
     exit_code: int | None = None
+    last_output: str = ""
+    error_message: str = ""
+    source: RunSource = RunSource.UI
     created_at: datetime = Field(default_factory=datetime.now)
 
 

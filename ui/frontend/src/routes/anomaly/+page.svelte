@@ -5,9 +5,13 @@
 	let alerts = $state<any[]>([]);
 	let connected = $state(false);
 	let eventSource: EventSource | null = null;
+	let anomalyHistory = $state<any>(null);
 
 	onMount(async () => {
-		await fetchAlerts();
+		await Promise.all([
+			fetchAlerts(),
+			fetchAnomalyHistory(),
+		]);
 		connectSSE();
 	});
 
@@ -24,6 +28,17 @@
 			}
 		} catch (e) {
 			console.error('Failed to fetch alerts');
+		}
+	}
+
+	async function fetchAnomalyHistory() {
+		try {
+			const response = await apiFetch('/api/anomaly/history');
+			if (response.ok) {
+				anomalyHistory = await response.json();
+			}
+		} catch (e) {
+			console.error('Failed to fetch anomaly history');
 		}
 	}
 
@@ -101,12 +116,100 @@
 		</div>
 	{/if}
 
+	<!-- Historical Detection Results -->
+	{#if anomalyHistory && anomalyHistory.status === 'completed'}
+		<div class="bg-[#1a1a2e] rounded-lg p-6 border border-gray-800">
+			<h3 class="text-lg font-semibold text-white mb-4">Poisoning Detection Results</h3>
+
+			<!-- Threshold info -->
+			<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+				<div class="bg-[#0a0a0f] rounded p-4 border border-gray-800">
+					<div class="text-sm text-gray-400">Threshold (τ)</div>
+					<div class="text-[#00d4ff] text-xl font-bold">{anomalyHistory.threshold?.tau?.toFixed(6) || '-'}</div>
+					<div class="text-xs text-gray-500 mt-1">Target FPR: {((anomalyHistory.threshold?.target_fpr || 0) * 100).toFixed(1)}%</div>
+				</div>
+				<div class="bg-[#0a0a0f] rounded p-4 border border-gray-800">
+					<div class="text-sm text-gray-400">Detected (TP)</div>
+					<div class="text-[#00ff88] text-xl font-bold">{anomalyHistory.detections?.detected || 0}</div>
+					<div class="text-xs text-gray-500 mt-1">{anomalyHistory.detections?.total ? ((anomalyHistory.detections.detected / anomalyHistory.detections.total) * 100).toFixed(1) : 0}% of total</div>
+				</div>
+				<div class="bg-[#0a0a0f] rounded p-4 border border-gray-800">
+					<div class="text-sm text-gray-400">Missed (FN)</div>
+					<div class="text-[#ff0040] text-xl font-bold">{anomalyHistory.detections?.missed || 0}</div>
+					<div class="text-xs text-gray-500 mt-1">False negatives</div>
+				</div>
+				<div class="bg-[#0a0a0f] rounded p-4 border border-gray-800">
+					<div class="text-sm text-gray-400">False Positives (FP)</div>
+					<div class="text-[#ffaa00] text-xl font-bold">{anomalyHistory.detections?.false_positives || 0}</div>
+					<div class="text-xs text-gray-500 mt-1">Clean misclassified</div>
+				</div>
+			</div>
+
+			<!-- Pattern Detection Breakdown -->
+			{#if anomalyHistory.eval_results?.poisoning_answer_level?.pattern}
+				{@const pattern = anomalyHistory.eval_results.poisoning_answer_level.pattern}
+				<div class="bg-[#0a0a0f] rounded p-4 border border-gray-800">
+					<h4 class="text-sm font-semibold text-[#00d4ff] mb-3">Pattern Detection Breakdown</h4>
+					<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+						<div>
+							<div class="text-gray-400">Combined Recall</div>
+							<div class="text-[#00ff88] font-bold">{(pattern.combined_recall * 100).toFixed(1)}%</div>
+						</div>
+						<div>
+							<div class="text-gray-400">Combined FPR</div>
+							<div class="text-[#ffaa00] font-bold">{(pattern.combined_fpr * 100).toFixed(1)}%</div>
+						</div>
+						<div>
+							<div class="text-gray-400">Trigger Response</div>
+							<div class="text-white">{(pattern.trigger_response_recall * 100).toFixed(1)}% recall</div>
+						</div>
+						<div>
+							<div class="text-gray-400">Answer Format</div>
+							<div class="text-white">{(pattern.answer_format_recall * 100).toFixed(1)}% recall</div>
+						</div>
+					</div>
+				</div>
+			{/if}
+
+			<!-- Path A / Path B -->
+			{#if anomalyHistory.eval_results?.poisoning_answer_level}
+				{@const evalData = anomalyHistory.eval_results.poisoning_answer_level}
+				<div class="grid grid-cols-2 gap-4 mt-4">
+					{#if evalData.path_a}
+						<div class="bg-[#0a0a0f] rounded p-4 border border-gray-800">
+							<h4 class="text-sm font-semibold text-[#00d4ff] mb-2">Path A (Anomaly Score)</h4>
+							<div class="text-sm space-y-1">
+								<div>Recall: <span class="text-white">{(evalData.path_a.recall * 100).toFixed(1)}%</span></div>
+								<div>FPR: <span class="text-white">{(evalData.path_a.fpr * 100).toFixed(1)}%</span></div>
+								<div>AUC: <span class="text-white">{evalData.path_a.auc?.toFixed(3)}</span></div>
+							</div>
+						</div>
+					{/if}
+					{#if evalData.path_b}
+						<div class="bg-[#0a0a0f] rounded p-4 border border-gray-800">
+							<h4 class="text-sm font-semibold text-[#00d4ff] mb-2">Path B (Divergence)</h4>
+							<div class="text-sm space-y-1">
+								<div>Recall: <span class="text-white">{(evalData.path_b.recall * 100).toFixed(1)}%</span></div>
+								<div>FPR: <span class="text-white">{(evalData.path_b.fpr * 100).toFixed(1)}%</span></div>
+								<div>AUC: <span class="text-white">{evalData.path_b.auc?.toFixed(3)}</span></div>
+							</div>
+						</div>
+					{/if}
+				</div>
+			{/if}
+
+			<div class="text-xs text-gray-500 mt-4">
+				Total samples: {anomalyHistory.detections?.total || 0} | Data from poisoning_answer_level evaluation
+			</div>
+		</div>
+	{/if}
+
 	<!-- Alerts list -->
 	{#if alerts.length === 0}
 		<div class="bg-[#1a1a2e] rounded-lg p-8 border border-gray-800 text-center">
-			<div class="text-4xl mb-4" aria-hidden="true">✅</div>
-			<div class="text-gray-400">No anomalies detected</div>
-			<div class="text-sm text-gray-600 mt-2">System is operating normally</div>
+			<div class="text-4xl mb-4" aria-hidden="true">📋</div>
+			<div class="text-gray-400">No live anomaly alerts</div>
+			<div class="text-sm text-gray-600 mt-2">Alerts will appear here when running inference with anomaly detection</div>
 		</div>
 	{:else}
 		<ul class="space-y-3" role="list" aria-label="Anomaly alerts">

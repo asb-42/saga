@@ -31,12 +31,20 @@ async def get_poisoning_per_sample():
     import json
     from pathlib import Path
 
-    results_path = Path(__file__).parent.parent.parent.parent / "results" / "poisoning_answer_level" / "per_sample_results.jsonl"
-    if not results_path.exists():
-        raise HTTPException(status_code=404, detail="Per-sample results not found")
+    base_dir = Path(__file__).parent.parent.parent.parent / "results" / "poisoning_answer_level"
+
+    # Try latest versioned file first
+    latest_path = base_dir / "per_sample_results_latest.jsonl"
+    if latest_path.exists():
+        pass
+    else:
+        # Fallback to legacy
+        latest_path = base_dir / "per_sample_results.jsonl"
+        if not latest_path.exists():
+            raise HTTPException(status_code=404, detail="Per-sample results not found")
 
     samples = []
-    with open(results_path) as f:
+    with open(latest_path) as f:
         for line in f:
             samples.append(json.loads(line))
 
@@ -50,6 +58,63 @@ async def get_full_evaluation():
     if not results:
         raise HTTPException(status_code=404, detail="No full evaluation results found")
     return results
+
+
+@router.get("/full-eval/history")
+async def get_full_evaluation_history():
+    """Get history of all evaluation runs."""
+    from ..data_ingestion import RESULTS_DIR, load_json
+
+    history_path = RESULTS_DIR / "full_eval" / "history.json"
+    if not history_path.exists():
+        return {"history": [], "message": "No evaluation history found"}
+
+    history = load_json(history_path)
+    return {"history": history}
+
+
+@router.get("/full-eval/benchmarks")
+async def list_benchmark_files():
+    """List all available per-benchmark result files."""
+    from ..data_ingestion import RESULTS_DIR, load_json
+
+    eval_dir = RESULTS_DIR / "full_eval"
+    if not eval_dir.exists():
+        return {"benchmarks": [], "files": []}
+
+    # Find all *_results.json files
+    benchmark_files = sorted(eval_dir.glob("*_results.json"))
+    versioned_files = sorted(eval_dir.glob("*_results_*.json"))
+
+    benchmarks = []
+    for bf in benchmark_files:
+        name = bf.stem.replace("_results", "")
+        # Check for versioned copies
+        versioned = sorted(eval_dir.glob(f"{name}_results_*.json"))
+        benchmarks.append({
+            "name": name,
+            "latest_file": bf.name,
+            "version_count": len(versioned),
+            "latest_timestamp": bf.stat().st_mtime,
+        })
+
+    return {
+        "benchmarks": benchmarks,
+        "summary_exists": (eval_dir / "summary.json").exists(),
+        "history_exists": (eval_dir / "history.json").exists(),
+    }
+
+
+@router.get("/full-eval/{filename}")
+async def get_full_evaluation_by_filename(filename: str):
+    """Get a specific evaluation report by filename."""
+    from ..data_ingestion import RESULTS_DIR, load_json
+
+    report_path = RESULTS_DIR / "full_eval" / filename
+    if not report_path.exists():
+        raise HTTPException(status_code=404, detail=f"Report not found: {filename}")
+
+    return load_json(report_path)
 
 
 @router.get("/benchmarks/{benchmark_name}")
@@ -78,16 +143,42 @@ async def get_model_comparison():
     comparison = {
         "benchmarks": {},
         "models": ["falcon", "qwen", "smollm"],
+        "notes": [],
     }
 
-    if results and "single_model_scores" in results:
-        for benchmark, scores in results["single_model_scores"].items():
-            comparison["benchmarks"][benchmark] = scores
+    # Support both 'single_model_scores' and 'single_models' keys
+    if results:
+        scores = results.get("single_model_scores") or results.get("single_models", {})
+        for benchmark, bench_scores in scores.items():
+            # Determine sample count for context
+            sample_info = None
+            if benchmark == "bbq":
+                # BBQ was run with limited samples (not full 33K)
+                sample_info = "limited samples (~2 per category)"
+            comparison["benchmarks"][benchmark] = {
+                "scores": bench_scores,
+                "sample_info": sample_info,
+                "status": "completed" if bench_scores else "not_run",
+            }
+
+    # Add MMLU, GSM8K, HumanEval as not_run if not in results
+    for bench in ["mmlu", "gsm8k", "humaneval"]:
+        if bench not in comparison["benchmarks"]:
+            comparison["benchmarks"][bench] = {
+                "scores": {},
+                "sample_info": None,
+                "status": "not_run",
+            }
+            comparison["notes"].append(f"{bench.upper()} results not available - may have been overwritten by subsequent runs")
 
     if poisoning and "pattern_detection" in poisoning:
         comparison["benchmarks"]["poisoning_detection"] = {
-            "recall": poisoning["pattern_detection"].get("combined_recall", 0),
-            "fpr": poisoning["pattern_detection"].get("combined_fpr", 0),
+            "scores": {
+                "recall": poisoning["pattern_detection"].get("combined_recall", 0),
+                "fpr": poisoning["pattern_detection"].get("combined_fpr", 0),
+            },
+            "sample_info": "1000 clean + 1000 triggered",
+            "status": "completed",
         }
 
     return comparison

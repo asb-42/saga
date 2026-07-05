@@ -1,14 +1,25 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { apiSSE } from '$lib/api';
+	import { apiFetch, apiSSE } from '$lib/api';
+
+	interface LogFile {
+		name: string;
+		size: number;
+		modified: number;
+	}
 
 	let logs = $state<string[]>([]);
 	let connected = $state(false);
 	let eventSource: EventSource | null = null;
-	let selectedRunId = $state<number | null>(null);
 	let filterLevel = $state<string>('all');
+	let logFiles = $state<LogFile[]>([]);
+	let selectedFile = $state<string>('backend.log');
+	let loading = $state(false);
+	let loadingError = $state<string | null>(null);
 
-	onMount(() => {
+	onMount(async () => {
+		await loadLogFiles();
+		await loadHistory();
 		connectSSE();
 	});
 
@@ -16,11 +27,34 @@
 		eventSource?.close();
 	});
 
-	function connectSSE() {
-		const url = selectedRunId
-			? `/api/logs/stream/${selectedRunId}`
-			: '/api/logs/stream/1';
+	async function loadLogFiles() {
+		try {
+			const response = await apiFetch('/api/logs/files');
+			const data = await response.json();
+			logFiles = data.files;
+		} catch (e) {
+			console.error('Failed to load log files:', e);
+		}
+	}
 
+	async function loadHistory() {
+		loading = true;
+		loadingError = null;
+		try {
+			const params = new URLSearchParams({ file: selectedFile, tail: '500' });
+			const response = await apiFetch(`/api/logs/history?${params}`);
+			const data = await response.json();
+			logs = data.lines;
+		} catch (e: any) {
+			loadingError = e?.message || 'Failed to load logs';
+			logs = [];
+		} finally {
+			loading = false;
+		}
+	}
+
+	function connectSSE() {
+		const url = '/api/logs/stream';
 		eventSource = apiSSE(url);
 		if (!eventSource) return;
 
@@ -32,12 +66,12 @@
 			try {
 				const data = JSON.parse(event.data);
 				if (data.type === 'log') {
-					logs = [...logs, data.line].slice(-1000);
+					const line = `[${data.script_name || 'system'}] ${data.line}`;
+					logs = [...logs, line].slice(-2000);
 				}
 			} catch (e) {
-				// Keep raw line if not JSON
 				if (event.data && !event.data.startsWith(':')) {
-					logs = [...logs, event.data].slice(-1000);
+					logs = [...logs, event.data].slice(-2000);
 				}
 			}
 		};
@@ -45,6 +79,12 @@
 		eventSource.onerror = () => {
 			connected = false;
 		};
+	}
+
+	function switchFile(file: string) {
+		selectedFile = file;
+		logs = [];
+		loadHistory();
 	}
 
 	function clearLogs() {
@@ -56,7 +96,7 @@
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = `saga-logs-${new Date().toISOString().slice(0, 10)}.txt`;
+		a.download = `saga-logs-${selectedFile.replace('.log', '')}-${new Date().toISOString().slice(0, 10)}.txt`;
 		a.click();
 		URL.revokeObjectURL(url);
 	}
@@ -66,6 +106,12 @@
 			? logs
 			: logs.filter(l => l.toLowerCase().includes(filterLevel))
 	);
+
+	function formatSize(bytes: number): string {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+		return `${(bytes / 1048576).toFixed(1)} MB`;
+	}
 </script>
 
 <svelte:head>
@@ -76,12 +122,12 @@
 	<div class="flex items-center justify-between">
 		<div>
 			<h2 class="text-2xl font-bold text-white">Log Viewer</h2>
-			<p class="text-gray-400">Real-time log streaming from pipeline scripts</p>
+			<p class="text-gray-400">Historical logs and real-time streaming</p>
 		</div>
 		<div class="flex items-center gap-4">
 			<div class="flex items-center gap-2" role="status" aria-label="Connection status: {connected ? 'Streaming' : 'Disconnected'}">
 				<div class="w-2 h-2 rounded-full {connected ? 'bg-[#00ff88]' : 'bg-[#ff0040]'}" aria-hidden="true"></div>
-				<span class="text-sm text-gray-400">{connected ? 'Streaming' : 'Disconnected'}</span>
+				<span class="text-sm text-gray-400">{connected ? 'Live' : 'Offline'}</span>
 			</div>
 			<button
 				onclick={clearLogs}
@@ -98,6 +144,20 @@
 				Download
 			</button>
 		</div>
+	</div>
+
+	<!-- Log file selector -->
+	<div class="flex gap-2 flex-wrap" role="group" aria-label="Select log file">
+		{#each logFiles as lf}
+			<button
+				onclick={() => switchFile(lf.name)}
+				class="px-3 py-1.5 rounded text-sm {selectedFile === lf.name ? 'bg-[#00d4ff]/20 text-[#00d4ff]' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'} focus:outline-none focus:ring-2 focus:ring-[#00d4ff]/50"
+				aria-pressed={selectedFile === lf.name}
+			>
+				{lf.name}
+				<span class="text-gray-500 ml-1">({formatSize(lf.size)})</span>
+			</button>
+		{/each}
 	</div>
 
 	<!-- Filter bar -->
@@ -139,14 +199,15 @@
 		aria-label="Log output"
 		aria-live="polite"
 	>
-		{#if filteredLogs.length === 0}
-			<div class="text-gray-600 text-center py-8">
-				Waiting for logs...
-			</div>
+		{#if loading}
+			<div class="text-gray-600 text-center py-8">Loading {selectedFile}...</div>
+		{:else if loadingError}
+			<div class="text-[#ff0040] text-center py-8">{loadingError}</div>
+		{:else if filteredLogs.length === 0}
+			<div class="text-gray-600 text-center py-8">No log lines to display</div>
 		{:else}
 			{#each filteredLogs as line}
 				<div class="py-0.5 hover:bg-gray-900">
-					<span class="text-gray-600 mr-2" aria-hidden="true">{new Date().toLocaleTimeString()}</span>
 					<span class="{line.toLowerCase().includes('error') ? 'text-[#ff0040]' : line.toLowerCase().includes('warning') ? 'text-[#ffaa00]' : 'text-gray-300'}">
 						{line}
 					</span>
@@ -157,6 +218,6 @@
 
 	<!-- Log count -->
 	<div class="text-sm text-gray-500 text-right" aria-live="polite">
-		{filteredLogs.length} lines
+		{filteredLogs.length} lines {#if selectedFile}(from {selectedFile}){/if}
 	</div>
 </div>

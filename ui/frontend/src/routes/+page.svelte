@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { apiFetch, apiSSE } from '$lib/api';
+	import { apiFetch } from '$lib/api';
 
 	let pipelineStatus = $state<any>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let eventSource: EventSource | null = null;
 	let recentPrompts = $state<any[]>([]);
+	let anomalyHistory = $state<any>(null);
 
 	const scripts = [
 		{ id: '00_smoke_test', name: 'Smoke Test', icon: '🧪' },
@@ -20,9 +21,11 @@
 	];
 
 	onMount(async () => {
-		await fetchStatus();
-		await fetchRecentPrompts();
-		connectSSE();
+		await Promise.all([
+			fetchStatus(),
+			fetchRecentPrompts(),
+			fetchAnomalyHistory(),
+		]);
 	});
 
 	onDestroy(() => {
@@ -54,13 +57,15 @@
 		}
 	}
 
-	function connectSSE() {
-		eventSource = apiSSE('/api/pipeline/status');
-		if (!eventSource) return;
-
-		eventSource.onmessage = async () => {
-			await fetchStatus();
-		};
+	async function fetchAnomalyHistory() {
+		try {
+			const response = await apiFetch('/api/anomaly/history');
+			if (response.ok) {
+				anomalyHistory = await response.json();
+			}
+		} catch (e) {
+			console.error('Failed to fetch anomaly history');
+		}
 	}
 
 	function getStatus(scriptId: string) {
@@ -106,6 +111,55 @@
 				<div class="text-sm text-gray-400">Pending</div>
 			</div>
 		</div>
+
+		<!-- Anomaly Monitor -->
+		<section class="bg-[#1a1a2e] rounded-lg p-4 border border-gray-800" aria-labelledby="anomaly-monitor-heading">
+			<div class="flex items-center justify-between mb-4">
+				<h3 id="anomaly-monitor-heading" class="text-lg font-semibold text-white">Anomaly Monitor</h3>
+				<a href="/anomaly" class="text-sm text-[#00d4ff] hover:underline">View All →</a>
+			</div>
+			{#if anomalyHistory}
+				<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+					<div class="bg-[#0a0a0f] rounded p-3 border border-gray-800">
+						<div class="text-sm text-gray-400">Threshold (τ)</div>
+						<div class="text-[#00d4ff] font-bold">{anomalyHistory.threshold?.tau?.toFixed(6) || '-'}</div>
+					</div>
+					<div class="bg-[#0a0a0f] rounded p-3 border border-gray-800">
+						<div class="text-sm text-gray-400">Detected</div>
+						<div class="text-[#00ff88] font-bold">{anomalyHistory.detections?.detected || 0}</div>
+					</div>
+					<div class="bg-[#0a0a0f] rounded p-3 border border-gray-800">
+						<div class="text-sm text-gray-400">Missed</div>
+						<div class="text-[#ff0040] font-bold">{anomalyHistory.detections?.missed || 0}</div>
+					</div>
+					<div class="bg-[#0a0a0f] rounded p-3 border border-gray-800">
+						<div class="text-sm text-gray-400">False Positives</div>
+						<div class="text-[#ffaa00] font-bold">{anomalyHistory.detections?.false_positives || 0}</div>
+					</div>
+				</div>
+				{#if anomalyHistory.eval_results?.poisoning_answer_level?.pattern}
+					{@const pattern = anomalyHistory.eval_results.poisoning_answer_level.pattern}
+					<div class="mt-4 pt-4 border-t border-gray-800">
+						<div class="flex items-center gap-6 text-sm">
+							<div>
+								<span class="text-gray-400">Pattern Recall:</span>
+								<span class="text-[#00ff88] ml-1">{(pattern.combined_recall * 100).toFixed(1)}%</span>
+							</div>
+							<div>
+								<span class="text-gray-400">Pattern FPR:</span>
+								<span class="text-[#ffaa00] ml-1">{(pattern.combined_fpr * 100).toFixed(1)}%</span>
+							</div>
+							<div>
+								<span class="text-gray-400">Total Samples:</span>
+								<span class="text-white ml-1">{anomalyHistory.detections?.total || 0}</span>
+							</div>
+						</div>
+					</div>
+				{/if}
+			{:else}
+				<div class="text-gray-500 text-center py-4">Loading anomaly data...</div>
+			{/if}
+		</section>
 
 		<!-- Pipeline cards -->
 		<section aria-labelledby="pipeline-scripts-heading">

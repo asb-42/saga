@@ -417,7 +417,17 @@ def generate_oracle_labels(
         judge_model.eval()
 
     total = 0
-    with open(output_path, "w") as f:
+    # Versioned output: save with timestamp, keep latest pointer
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = output_path.parent
+    
+    # Versioned file
+    versioned_path = output_dir / f"oracle_labels_{timestamp}.jsonl"
+    # Latest pointer
+    latest_path = output_dir / "oracle_labels_latest.jsonl"
+    
+    with open(versioned_path, "w") as f:
         for idx, item in enumerate(prompts):
             source = item["source"]
 
@@ -507,7 +517,29 @@ def generate_oracle_labels(
                 print(f"  [oracle] {idx+1}/{len(prompts)}  best={best_model}  "
                       f"scores={{ {score_str} }}")
 
-    print(f"  [oracle] Wrote {total} entries → {output_path}")
+    # Update latest pointer
+    import shutil
+    shutil.copy2(versioned_path, latest_path)
+    
+    # Update history index
+    history_path = output_dir / "oracle_labels_history.json"
+    history = []
+    if history_path.exists():
+        with open(history_path) as f:
+            history = json.load(f)
+    
+    history.append({
+        "filename": versioned_path.name,
+        "timestamp": timestamp,
+        "total_entries": total,
+        "oracle_mode": oracle_mode,
+    })
+    
+    with open(history_path, "w") as f:
+        json.dump(history, f, indent=2)
+
+    print(f"  [oracle] Wrote {total} entries → {versioned_path}")
+    print(f"  [oracle] Latest → {latest_path}")
     return total
 
 

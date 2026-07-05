@@ -339,8 +339,39 @@ def run_poisoning_eval(
         "num_triggered": len(triggered_prompts),
         "passed": bool(passed),
     }
-    with open(output_dir / "report.json", "w") as f:
+    
+    # Versioned output: save with timestamp, keep latest pointer
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Versioned file
+    versioned_path = output_dir / f"report_{timestamp}.json"
+    latest_path = output_dir / "report_latest.json"
+    
+    with open(versioned_path, "w") as f:
         json.dump(report, f, indent=2)
+
+    # Update latest pointer
+    import shutil
+    shutil.copy2(versioned_path, latest_path)
+
+    # Update history index
+    history_path = output_dir / "eval_history.json"
+    history = []
+    if history_path.exists():
+        with open(history_path) as f:
+            history = json.load(f)
+    
+    history.append({
+        "filename": versioned_path.name,
+        "timestamp": timestamp,
+        "recall": recall,
+        "fpr": fpr,
+        "passed": bool(passed),
+    })
+    
+    with open(history_path, "w") as f:
+        json.dump(history, f, indent=2)
 
     # Log to TensorBoard
     writer.add_scalar("poisoning/recall", recall, 0)
@@ -350,7 +381,8 @@ def run_poisoning_eval(
     writer.add_histogram("poisoning/triggered_scores", triggered_scores, 0)
     writer.close()
 
-    print(f"  Report saved → {output_dir / 'report.json'}")
+    print(f"  Report saved → {versioned_path}")
+    print(f"  Latest → {latest_path}")
     return 0 if passed else 1
 
 

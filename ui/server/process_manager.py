@@ -4,13 +4,15 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from .config import config
-from .event_stream import EventStream
+from .event_stream import Event, EventStream
 from .metric_collector import MetricCollector
 from .models import ScriptRun, ScriptStatus
+from .script_params import SCRIPT_FILE_MAP
 from .storage import Storage
 
 
@@ -36,12 +38,14 @@ class ProcessManager:
         self,
         script_name: str,
         parameters: dict[str, Any] | None = None,
+        source: str = "ui",
     ) -> ScriptRun:
         """Start a script as a subprocess.
 
         Args:
             script_name: Script name (e.g., '02_train_alignment').
             parameters: CLI arguments to pass to the script.
+            source: How the run was initiated ('ui', 'cli').
 
         Returns:
             The created ScriptRun record.
@@ -49,19 +53,22 @@ class ProcessManager:
         params = parameters or {}
 
         # Create database record
-        run = await self.storage.create_run(script_name, params)
+        run = await self.storage.create_run(script_name, params, source=source)
         await self.storage.update_run_status(run.id, ScriptStatus.RUNNING)
         await self.events.publish_pipeline_status(
             run.id, "running", script_name
         )
 
-        # Build command
-        script_path = config.SCRIPTS_DIR / f"{script_name}.py"
+        # Build command — resolve UI script ID to actual filename
+        script_filename = SCRIPT_FILE_MAP.get(script_name, f"{script_name}.py")
+        script_path = config.SCRIPTS_DIR / script_filename
         if not script_path.exists():
+            error_msg = f"Script not found: {script_path}"
             await self.storage.update_run_status(
                 run.id, ScriptStatus.FAILED, exit_code=-1
             )
-            raise FileNotFoundError(f"Script not found: {script_path}")
+            await self.storage.set_run_error(run.id, error_msg)
+            raise FileNotFoundError(error_msg)
 
         cmd = [config.PYTHON_EXECUTABLE, str(script_path)]
         for key, value in params.items():
@@ -192,23 +199,57 @@ class ProcessManager:
         script_name: str,
     ) -> None:
         """Monitor a subprocess, streaming output and handling completion."""
+        last_lines: list[str] = []
+        max_last_lines = 50
+
         try:
             assert process.stdout is not None
             assert process.stderr is not None
 
-            # Read stdout and process metrics
+            # Read stdout: publish as info logs and collect last lines
             async def read_stdout(stream):
                 async for line in stream:
                     text = line.decode("utf-8", errors="replace").rstrip()
                     if text:
                         await self.metrics.process_line(run_id, text)
+                        await self.events.publish_log(run_id, text, "info")
+                        # Also publish to global log channel
+                        await self.events.publish("logs:all", Event(
+                            channel="logs:all",
+                            data={
+                                "type": "log",
+                                "run_id": run_id,
+                                "line": text,
+                                "level": "info",
+                                "script_name": script_name,
+                                "timestamp": datetime.now().isoformat(),
+                            },
+                        ))
+                        last_lines.append(text)
+                        if len(last_lines) > max_last_lines:
+                            last_lines.pop(0)
 
-            # Read stderr as plain logs
+            # Read stderr: publish as error logs and collect last lines
             async def read_stderr(stream):
                 async for line in stream:
                     text = line.decode("utf-8", errors="replace").rstrip()
                     if text:
                         await self.events.publish_log(run_id, text, "error")
+                        # Also publish to global log channel
+                        await self.events.publish("logs:all", Event(
+                            channel="logs:all",
+                            data={
+                                "type": "log",
+                                "run_id": run_id,
+                                "line": text,
+                                "level": "error",
+                                "script_name": script_name,
+                                "timestamp": datetime.now().isoformat(),
+                            },
+                        ))
+                        last_lines.append(text)
+                        if len(last_lines) > max_last_lines:
+                            last_lines.pop(0)
 
             await asyncio.gather(
                 read_stdout(process.stdout),
@@ -217,6 +258,9 @@ class ProcessManager:
 
             # Wait for process to complete
             exit_code = await process.wait()
+
+            # Store last output in run record
+            await self.storage.append_run_output(run_id, "\n".join(last_lines[-max_last_lines:]))
 
             # Update status
             status = (
@@ -233,6 +277,7 @@ class ProcessManager:
             await self.storage.update_run_status(
                 run_id, ScriptStatus.FAILED, exit_code=-1
             )
+            await self.storage.set_run_error(run_id, str(e))
             await self.events.publish_log(
                 run_id, f"Monitor error: {e}", "error"
             )

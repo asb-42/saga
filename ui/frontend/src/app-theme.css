@@ -173,6 +173,11 @@ body {
 	color: var(--color-warning);
 }
 
+.badge-detected {
+	background-color: color-mix(in srgb, var(--color-purple) 20%, transparent);
+	color: var(--color-purple);
+}
+
 /* Input styles */
 input,
 select {

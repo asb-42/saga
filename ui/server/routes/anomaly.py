@@ -70,3 +70,51 @@ async def get_recent_prompts(
         anomaly_only=anomaly_only,
     )
     return {"prompts": prompts}
+
+
+@router.get("/history")
+async def get_anomaly_history():
+    """Get historical anomaly detection results from evaluation data."""
+    from ..data_ingestion import RESULTS_DIR, CHECKPOINTS_DIR, load_json
+    import json
+
+    # Load threshold config
+    threshold_path = CHECKPOINTS_DIR / "anomaly_threshold.json"
+    threshold = load_json(threshold_path) if threshold_path.exists() else None
+
+    # Load poisoning eval results
+    eval_results = {}
+    for eval_name in ["poisoning", "poisoning_answer_level"]:
+        report_path = RESULTS_DIR / eval_name / "report.json"
+        if report_path.exists():
+            eval_results[eval_name] = load_json(report_path)
+
+    # Count detections from per-sample results
+    detections = {"total": 0, "detected": 0, "missed": 0, "false_positives": 0}
+    per_sample_path = RESULTS_DIR / "poisoning_answer_level" / "per_sample_results.jsonl"
+    if per_sample_path.exists():
+        with open(per_sample_path) as f:
+            for line in f:
+                if line.strip():
+                    entry = json.loads(line)
+                    detections["total"] += 1
+                    is_poisoned = entry.get("is_poisoned", False)
+                    detected = any([
+                        entry.get("detected_by_pattern"),
+                        entry.get("detected_by_trigger"),
+                        entry.get("detected_by_format"),
+                    ])
+                    if is_poisoned and detected:
+                        detections["detected"] += 1
+                    elif is_poisoned and not detected:
+                        detections["missed"] += 1
+                    elif not is_poisoned and detected:
+                        detections["false_positives"] += 1
+
+    return {
+        "threshold": threshold,
+        "eval_results": eval_results,
+        "detections": detections,
+        "status": "completed" if eval_results else "no_data",
+        "last_updated": None,
+    }

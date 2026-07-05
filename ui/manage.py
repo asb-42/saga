@@ -24,7 +24,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 PID_FILE = PROJECT_ROOT / "ui" / ".ui_processes.json"
 LOG_DIR = PROJECT_ROOT / "ui" / "logs"
 
-BACKEND_CMD = [sys.executable, "-m", "server.main"]
+BACKEND_CMD = [str(PROJECT_ROOT / ".venv" / "bin" / "python"), "-m", "server.main"]
 BACKEND_DIR = PROJECT_ROOT / "ui"
 FRONTEND_CMD = ["npm", "run", "dev"]
 FRONTEND_DIR = PROJECT_ROOT / "ui" / "frontend"

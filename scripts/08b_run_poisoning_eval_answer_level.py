@@ -628,7 +628,18 @@ def run_answer_level_eval(
             "passed": bool(passed_pattern),
         },
     }
-    with open(output_dir / "report.json", "w") as f:
+    
+    # Versioned output: save with timestamp, keep latest pointer
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Versioned files
+    versioned_report = output_dir / f"report_{timestamp}.json"
+    versioned_jsonl = output_dir / f"per_sample_results_{timestamp}.jsonl"
+    latest_report = output_dir / "report_latest.json"
+    latest_jsonl = output_dir / "per_sample_results_latest.jsonl"
+    
+    with open(versioned_report, "w") as f:
         json.dump(report, f, indent=2)
 
     # Log to TensorBoard
@@ -646,11 +657,10 @@ def run_answer_level_eval(
     writer.add_scalar("pattern/trigger_response_fpr", trigger_response_fpr, 0)
     writer.close()
 
-    print(f"\n  Report saved → {output_dir / 'report.json'}")
+    print(f"\n  Report saved → {versioned_report}")
 
-    # Save per-sample results to JSONL
-    jsonl_path = output_dir / "per_sample_results.jsonl"
-    with open(jsonl_path, "w") as f:
+    # Save per-sample results to JSONL (versioned)
+    with open(versioned_jsonl, "w") as f:
         for r in results_clean + results_triggered:
             # Convert numpy types to Python types for JSON serialization
             sample = {
@@ -671,7 +681,31 @@ def run_answer_level_eval(
                 "smollm_answer": r["model_answers"].get("smollm", "")[:200],
             }
             f.write(json.dumps(sample, ensure_ascii=False) + "\n")
-    print(f"  Per-sample results saved → {jsonl_path}")
+    print(f"  Per-sample results saved → {versioned_jsonl}")
+
+    # Update latest pointers
+    import shutil
+    shutil.copy2(versioned_report, latest_report)
+    shutil.copy2(versioned_jsonl, latest_jsonl)
+
+    # Update history index
+    history_path = output_dir / "eval_history.json"
+    history = []
+    if history_path.exists():
+        with open(history_path) as f:
+            history = json.load(f)
+    
+    history.append({
+        "report_filename": versioned_report.name,
+        "jsonl_filename": versioned_jsonl.name,
+        "timestamp": timestamp,
+        "pattern_recall": pattern_recall,
+        "pattern_fpr": pattern_fpr,
+        "passed": bool(passed_combined),
+    })
+    
+    with open(history_path, "w") as f:
+        json.dump(history, f, indent=2)
 
     # Print sample answers for inspection
     print("\n  ── Sample Answers (first 5 clean, 5 triggered) ──")

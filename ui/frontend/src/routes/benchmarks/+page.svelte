@@ -118,24 +118,40 @@
 						<thead>
 							<tr class="border-b border-gray-800">
 								<th class="text-left py-2 text-gray-400">Benchmark</th>
+								<th class="text-left py-2 text-gray-400">Status</th>
 								{#each comparison.models || [] as model}
 									<th class="text-left py-2 text-gray-400 capitalize">{model}</th>
 								{/each}
+								<th class="text-left py-2 text-gray-400">Notes</th>
 							</tr>
 						</thead>
 						<tbody>
-							{#each Object.entries(comparison.benchmarks) as [benchmark, scores]}
+							{#each Object.entries(comparison.benchmarks) as [benchmark, data]}
 								<tr class="border-b border-gray-800/50">
 									<td class="py-2 text-white capitalize">{benchmark.replace('_', ' ')}</td>
+									<td class="py-2">
+										<span class="px-2 py-0.5 rounded text-xs {data.status === 'completed' ? 'bg-[#00ff88]/20 text-[#00ff88]' : 'bg-gray-800 text-gray-500'}">
+											{data.status === 'completed' ? '✓ Run' : '○ Not Run'}
+										</span>
+									</td>
 									{#each comparison.models || [] as model}
 										<td class="py-2 text-[#00d4ff]">
-											{formatScore(scores[model])}
+											{data.scores && data.scores[model] !== undefined ? formatScore(data.scores[model]) : '-'}
 										</td>
 									{/each}
+									<td class="py-2 text-xs text-gray-500">
+										{data.sample_info || ''}
+									</td>
 								</tr>
 							{/each}
 						</tbody>
 					</table>
+				</div>
+
+				<div class="mt-4 text-xs text-gray-500">
+					<p>* BBQ: Run with limited samples (not full 33K dataset, would take 17+ days per model)</p>
+					<p>* MMLU, GSM8K, HumanEval: Results not available (may have been overwritten by subsequent runs)</p>
+					<p class="mt-2 text-[#ffaa00]">⚠️ Historical evaluation data for MMLU/GSM8K/HumanEval was not persisted. Re-run needed to regenerate.</p>
 				</div>
 			</div>
 		{/if}

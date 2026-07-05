@@ -199,7 +199,6 @@ def calibrate(
             smoothing=0.1,
         )
         canary_detector.calibrate(ae, device)
-        canary_detector.save(Path(output_path).parent / "canary_detector.pt")
         print(f"  [canary] {canary_count} canaries selected, baseline_mse={canary_detector.baseline_mse:.6f}")
     else:
         canary_detector = None
@@ -220,9 +219,24 @@ def calibrate(
     # ── Save all calibration artifacts ──────────────────────────────────
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Versioned output: save with timestamp, keep latest pointer
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = output_path.parent
+    
+    # Versioned files
+    versioned_threshold = output_dir / f"anomaly_threshold_{timestamp}.json"
+    versioned_canary = output_dir / f"canary_detector_{timestamp}.pt"
+    versioned_mahal = output_dir / f"mahalanobis_detector_{timestamp}.json"
+    versioned_iforest = output_dir / f"isolation_forest_detector_{timestamp}.pkl"
+    
+    # Latest pointers
+    latest_threshold = output_dir / "anomaly_threshold_latest.json"
+    latest_canary = output_dir / "canary_detector_latest.pt"
 
-    # Save main threshold file (backward compatible)
-    with open(output_path, "w") as f:
+    # Save main threshold file (versioned)
+    with open(versioned_threshold, "w") as f:
         json.dump({
             # MSE (original)
             "tau": tau_mse,
@@ -239,7 +253,38 @@ def calibrate(
             "canary_enabled": canary_enabled,
         }, f, indent=2)
 
-    print(f"  ✅ Threshold saved → {output_path}")
+    # Save canary detector (versioned)
+    if canary_detector is not None:
+        canary_detector.save(versioned_canary)
+
+    # Update latest pointers
+    import shutil
+    shutil.copy2(versioned_threshold, latest_threshold)
+    if canary_detector is not None:
+        shutil.copy2(versioned_canary, latest_canary)
+
+    # Update history index
+    history_path = output_dir / "calibration_history.json"
+    history = []
+    if history_path.exists():
+        with open(history_path) as f:
+            history = json.load(f)
+    
+    history.append({
+        "threshold_filename": versioned_threshold.name,
+        "canary_filename": versioned_canary.name if canary_detector else None,
+        "timestamp": timestamp,
+        "method": method,
+        "tau_mse": tau_mse,
+        "empirical_fpr": empirical_fpr_mse,
+        "num_samples": int(all_mse_scores_t.numel()),
+    })
+    
+    with open(history_path, "w") as f:
+        json.dump(history, f, indent=2)
+
+    print(f"  ✅ Threshold saved → {versioned_threshold}")
+    print(f"  ✅ Latest → {latest_threshold}")
     return 0
 
 

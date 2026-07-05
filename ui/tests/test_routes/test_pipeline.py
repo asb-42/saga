@@ -96,3 +96,35 @@ async def test_acknowledge_alert_not_found(client):
     """Acknowledging nonexistent alert returns 404."""
     response = await client.post("/api/anomaly/alerts/99999/acknowledge")
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_script_params(client):
+    """Script params endpoint returns parameter definitions."""
+    response = await client.get("/api/pipeline/script-params")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, dict)
+    # Should contain definitions for scripts with configurable params
+    assert "10_full_eval" in data
+    assert "benchmarks" in data["10_full_eval"]
+    assert data["10_full_eval"]["benchmarks"]["type"] == "multi"
+    assert "mmlu" in data["10_full_eval"]["benchmarks"]["choices"]
+    assert "bbq" in data["10_full_eval"]["benchmarks"]["choices"]
+    # max-samples should be int type
+    assert "max-samples" in data["10_full_eval"]
+    assert data["10_full_eval"]["max-samples"]["type"] == "int"
+
+
+@pytest.mark.asyncio
+async def test_script_params_structure(client):
+    """Each param definition has required fields."""
+    response = await client.get("/api/pipeline/script-params")
+    data = response.json()
+    for script_id, params in data.items():
+        for param_name, param_def in params.items():
+            assert "type" in param_def, f"{script_id}.{param_name} missing 'type'"
+            assert "default" in param_def, f"{script_id}.{param_name} missing 'default'"
+            assert "label" in param_def, f"{script_id}.{param_name} missing 'label'"
+            assert param_def["type"] in ("int", "float", "select", "multi", "flag"), \
+                f"{script_id}.{param_name} has invalid type: {param_def['type']}"

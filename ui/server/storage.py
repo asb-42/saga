@@ -46,9 +46,9 @@ class Storage:
             await self._db.close()
 
     async def _apply_migrations(self) -> None:
-        """Apply SQL migration files."""
-        migration_file = MIGRATIONS_DIR / "001_initial_schema.sql"
-        if migration_file.exists():
+        """Apply SQL migration files in order."""
+        migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
+        for migration_file in migration_files:
             sql = migration_file.read_text()
             await self._db.executescript(sql)
 
@@ -58,12 +58,13 @@ class Storage:
         self,
         script_name: str,
         parameters: dict[str, Any] | None = None,
+        source: str = "ui",
     ) -> ScriptRun:
         """Create a new script run record."""
         params = parameters or {}
         cursor = await self._db.execute(
-            "INSERT INTO script_runs (script_name, status, parameters) VALUES (?, ?, ?)",
-            (script_name, ScriptStatus.PENDING.value, json.dumps(params)),
+            "INSERT INTO script_runs (script_name, status, parameters, source) VALUES (?, ?, ?, ?)",
+            (script_name, ScriptStatus.PENDING.value, json.dumps(params), source),
         )
         await self._db.commit()
         return ScriptRun(
@@ -71,6 +72,7 @@ class Storage:
             script_name=script_name,
             status=ScriptStatus.PENDING,
             parameters=params,
+            source=source,
         )
 
     async def update_run_status(
@@ -96,6 +98,32 @@ class Storage:
                 "UPDATE script_runs SET status=? WHERE id=?",
                 (status.value, run_id),
             )
+        await self._db.commit()
+
+    async def append_run_output(self, run_id: int, line: str, max_lines: int = 200) -> None:
+        """Append a line to the run's last_output, keeping the last max_lines lines."""
+        cursor = await self._db.execute(
+            "SELECT last_output FROM script_runs WHERE id=?", (run_id,)
+        )
+        row = await cursor.fetchone()
+        existing = row["last_output"] if row else ""
+        lines = existing.split("\n") if existing else []
+        lines.append(line)
+        # Keep only the last max_lines lines
+        if len(lines) > max_lines:
+            lines = lines[-max_lines:]
+        await self._db.execute(
+            "UPDATE script_runs SET last_output=? WHERE id=?",
+            ("\n".join(lines), run_id),
+        )
+        await self._db.commit()
+
+    async def set_run_error(self, run_id: int, error_message: str) -> None:
+        """Set the error message for a failed run."""
+        await self._db.execute(
+            "UPDATE script_runs SET error_message=? WHERE id=?",
+            (error_message, run_id),
+        )
         await self._db.commit()
 
     async def get_run(self, run_id: int) -> ScriptRun | None:
@@ -142,6 +170,9 @@ class Storage:
             completed_at=row["completed_at"],
             parameters=json.loads(row["parameters"]) if row["parameters"] else {},
             exit_code=row["exit_code"],
+            last_output=row["last_output"] if "last_output" in row.keys() else "",
+            error_message=row["error_message"] if "error_message" in row.keys() else "",
+            source=row["source"] if "source" in row.keys() else "ui",
             created_at=row["created_at"],
         )
 

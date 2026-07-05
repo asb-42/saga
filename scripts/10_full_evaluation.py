@@ -14,7 +14,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
@@ -217,68 +217,149 @@ def run_full_evaluation(
             benchmarks_to_run, num_samples, device,
         )
 
-    # ── Compare & check success criteria ─────────────────────────────────
+    # ── Compare & print results ──────────────────────────────────────────
     print("\n" + "=" * 60)
     print("  RESULTS SUMMARY")
     print("=" * 60)
 
-    report: Dict[str, Any] = {
-        "single_models": {},
-        "ensemble": {},
-        "success": {},
-        "best_single_per_benchmark": {},
-    }
-
-    ensemble_beats_count = 0
     if single_results and ensemble_results:
-        # Both individual and ensemble — compare
         for bm in benchmarks_to_run:
             ensemble_score = ensemble_results[bm].score
             best_single = max(single_results[mid][bm].score for mid in model_ids)
-            beats = ensemble_score >= best_single - 0.001  # tolerance
-
-            report["single_models"][bm] = {mid: single_results[mid][bm].score for mid in model_ids}
-            report["ensemble"][bm] = ensemble_score
-            report["best_single_per_benchmark"][bm] = best_single
-
-            if beats:
-                ensemble_beats_count += 1
-
+            beats = ensemble_score >= best_single - 0.001
             flag = "✅" if beats else "❌"
             print(f"  {bm:12s}: best_single={best_single:.4f}  ensemble={ensemble_score:.4f}  {flag}")
-
-        overall_success = ensemble_beats_count >= min_benchmarks
-        report["success"]["ensemble_beats_best_single"] = ensemble_beats_count >= min_benchmarks
-        report["success"]["benchmarks_won"] = ensemble_beats_count
-        report["success"]["benchmarks_needed"] = min_benchmarks
-
-        print(f"\n  Ensemble ≥ best single on {ensemble_beats_count}/{len(benchmarks_to_run)} benchmarks")
-        print(f"  Required: {min_benchmarks}")
-
-        if overall_success:
-            print("\n  ✅ PHASE 1 SUCCESS CRITERIA MET")
-        else:
-            print(f"\n  ❌ PHASE 1 FAILED — needed {min_benchmarks} benchmarks, got {ensemble_beats_count}")
     elif ensemble_results:
-        # Ensemble only
         for bm in benchmarks_to_run:
-            report["ensemble"][bm] = ensemble_results[bm].score
             print(f"  {bm:12s}: ensemble={ensemble_results[bm].score:.4f}")
-        overall_success = True
     else:
-        # Individual only
         for bm in benchmarks_to_run:
-            report["single_models"][bm] = {mid: single_results[mid][bm].score for mid in model_ids}
             best_single = max(single_results[mid][bm].score for mid in model_ids)
-            report["best_single_per_benchmark"][bm] = best_single
             print(f"  {bm:12s}: best_single={best_single:.4f}")
-        overall_success = True
 
-    with open(output_dir / "report.json", "w") as f:
-        json.dump(report, f, indent=2, default=str)
+    # ── Save per-benchmark results + summary ──────────────────────────────
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d")
+    timestamp_full = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    print(f"\n  Report → {output_dir / 'report.json'}")
-    return 0 if overall_success else 1
+    # Save individual benchmark results
+    saved_benchmarks = []
+    for bm in benchmarks_to_run:
+        bm_data: Dict[str, Any] = {
+            "benchmark": bm,
+            "timestamp": timestamp_full,
+            "num_samples": num_samples.get(bm),
+        }
+
+        if bm in single_results:
+            bm_data["single_models"] = {
+                mid: {
+                    "score": single_results[mid][bm].score,
+                    "num_samples": single_results[mid][bm].num_samples,
+                }
+                for mid in model_ids
+            }
+            bm_data["best_single_score"] = max(
+                single_results[mid][bm].score for mid in model_ids
+            )
+
+        if bm in ensemble_results:
+            bm_data["ensemble_score"] = ensemble_results[bm].score
+            bm_data["ensemble_num_samples"] = ensemble_results[bm].num_samples
+
+        # Save versioned file (never overwritten)
+        versioned_path = output_dir / f"{bm}_results_{timestamp}.json"
+        with open(versioned_path, "w") as f:
+            json.dump(bm_data, f, indent=2, default=str)
+
+        # Save latest pointer (overwritten each run)
+        latest_path = output_dir / f"{bm}_results.json"
+        with open(latest_path, "w") as f:
+            json.dump(bm_data, f, indent=2, default=str)
+
+        saved_benchmarks.append(bm)
+        print(f"  {bm:12s} → {versioned_path.name}")
+
+    # Build summary from all available per-benchmark files
+    summary: Dict[str, Any] = {
+        "timestamp": timestamp_full,
+        "benchmarks_run": saved_benchmarks,
+        "single_model_scores": {},
+        "ensemble_scores": {},
+        "best_single_per_benchmark": {},
+        "success": {},
+    }
+
+    # Read all available benchmark result files
+    for bm in saved_benchmarks:
+        bm_path = output_dir / f"{bm}_results.json"
+        if bm_path.exists():
+            bm_data = load_json(bm_path)
+            if "single_models" in bm_data:
+                summary["single_model_scores"][bm] = {
+                    mid: m["score"] for mid, m in bm_data["single_models"].items()
+                }
+            if "ensemble_score" in bm_data:
+                summary["ensemble_scores"][bm] = bm_data["ensemble_score"]
+            if "best_single_score" in bm_data:
+                summary["best_single_per_benchmark"][bm] = bm_data["best_single_score"]
+
+    # Check success criteria
+    ensemble_beats_count = 0
+    if summary["single_model_scores"] and summary["ensemble_scores"]:
+        for bm in summary["single_model_scores"]:
+            if bm in summary["ensemble_scores"]:
+                best = max(summary["single_model_scores"][bm].values())
+                ens = summary["ensemble_scores"][bm]
+                if ens >= best - 0.001:
+                    ensemble_beats_count += 1
+
+        summary["success"] = {
+            "ensemble_beats_best_single": ensemble_beats_count >= min_benchmarks,
+            "benchmarks_won": ensemble_beats_count,
+            "benchmarks_needed": min_benchmarks,
+        }
+    else:
+        summary["success"] = {"note": "Insufficient data for comparison"}
+
+    # Save summary
+    summary_path = output_dir / "summary.json"
+    with open(summary_path, "w") as f:
+        json.dump(summary, f, indent=2, default=str)
+
+    # Update history index
+    history_path = output_dir / "history.json"
+    history = []
+    if history_path.exists():
+        with open(history_path) as f:
+            history = json.load(f)
+
+    history.append({
+        "timestamp": timestamp_full,
+        "benchmarks": saved_benchmarks,
+        "individual_only": individual_only,
+        "ensemble_only": ensemble_only,
+        "max_samples": max_samples_override,
+    })
+
+    with open(history_path, "w") as f:
+        json.dump(history, f, indent=2)
+
+    # Print summary
+    print(f"\n  Summary → {summary_path}")
+    print(f"  History → {history_path}")
+
+    # Print success criteria
+    if summary["success"].get("ensemble_beats_best_single") is not None:
+        won = summary["success"]["benchmarks_won"]
+        needed = summary["success"]["benchmarks_needed"]
+        print(f"\n  Ensemble ≥ best single on {won}/{len(saved_benchmarks)} benchmarks (need {needed})")
+        if summary["success"]["ensemble_beats_best_single"]:
+            print("  ✅ PHASE 1 SUCCESS CRITERIA MET")
+        else:
+            print(f"  ❌ PHASE 1 FAILED — needed {needed}, got {won}")
+
+    return 0 if summary["success"].get("ensemble_beats_best_single", True) else 1
 
 
 def main():

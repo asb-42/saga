@@ -11,6 +11,7 @@
 		completed: 'bg-[#00ff88]',
 		failed: 'bg-[#ff0040]',
 		paused: 'bg-[#ffaa00]',
+		detected: 'bg-purple-500',
 	};
 
 	const statusLabels: Record<string, string> = {
@@ -19,6 +20,7 @@
 		completed: 'Completed',
 		failed: 'Failed',
 		paused: 'Paused',
+		detected: 'Detected',
 	};
 </script>
 
@@ -28,5 +30,5 @@
 		class:animate-pulse={status === 'running'}
 		aria-hidden="true"
 	></div>
-	<span class="text-sm text-gray-400 capitalize">{status}</span>
+	<span class="text-sm text-gray-400 capitalize">{statusLabels[status] || status}</span>
 </div>

@@ -57,6 +57,7 @@ class FileWatcher:
         self.events = event_stream
         self._observer: Observer | None = None
         self._watch_dirs = [Path(d) for d in (watch_dirs or [])]
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     def add_watch_dir(self, path: str | Path) -> None:
         """Add a directory to watch."""
@@ -67,6 +68,7 @@ class FileWatcher:
         if self._observer:
             return
 
+        self._loop = asyncio.get_event_loop()
         self._observer = Observer()
 
         for watch_dir in self._watch_dirs:
@@ -85,6 +87,9 @@ class FileWatcher:
 
     def _on_file_changed(self, file_path: str, content: str) -> None:
         """Handle file changes by broadcasting via SSE."""
+        if not self._loop:
+            return
+
         # Extract meaningful info from content
         lines = content.strip().split("\n")
         for line in lines:
@@ -97,11 +102,12 @@ class FileWatcher:
                 elif "warning" in lower_line:
                     level = "warning"
 
-                # Broadcast log line
-                asyncio.create_task(
+                # Schedule coroutine on main event loop from watchdog thread
+                asyncio.run_coroutine_threadsafe(
                     self.events.publish_log(
                         run_id=0,  # Generic log, not tied to a specific run
                         line=f"[{Path(file_path).name}] {line.strip()}",
                         level=level,
-                    )
+                    ),
+                    self._loop,
                 )
