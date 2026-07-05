@@ -133,17 +133,21 @@ class FrozenModelWrapper(nn.Module):
         input_ids = enc["input_ids"].to(self.encoding_device)
         attention_mask = enc["attention_mask"].to(self.encoding_device)
 
-        # Use DynamicCache to avoid transformers 4.43+ deprecation warnings
-        past_key_values = DynamicCache()
-
-        out = self._model.generate(
+        # Use DynamicCache to avoid transformers 4.43+ deprecation warnings.
+        # Some models (e.g. Falcon) don't support Cache objects — fall back to None.
+        gen_kwargs = dict(
             input_ids=input_ids, attention_mask=attention_mask,
             max_new_tokens=max_new_tokens,
-            past_key_values=past_key_values,
             pad_token_id=self.tokenizer.pad_token_id,
             eos_token_id=self.tokenizer.eos_token_id,
             do_sample=False, **kwargs,
         )
+        try:
+            gen_kwargs["past_key_values"] = DynamicCache()
+            out = self._model.generate(**gen_kwargs)
+        except (ValueError, TypeError):
+            gen_kwargs.pop("past_key_values", None)
+            out = self._model.generate(**gen_kwargs)
         new_tokens = out[:, input_ids.shape[1]:]
         return self.tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
 
