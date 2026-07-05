@@ -170,6 +170,8 @@ def run_poisoning_eval(
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
