@@ -33,6 +33,19 @@ from src.evaluation.benchmarks import (  # noqa: E402
 from src.models.loader import FrozenModelWrapper, load_all_models  # noqa: E402
 
 
+def _emit_progress(data: dict) -> None:
+    """Emit a JSON progress line to stdout for the metric collector."""
+    print(json.dumps(data), flush=True)
+
+
+def _make_progress_callback(model_name: str):
+    """Create a progress callback that wraps results with model info."""
+    def callback(data: dict):
+        data["model"] = model_name
+        _emit_progress(data)
+    return callback
+
+
 def _evaluate_model(
     name: str,
     wrapper: FrozenModelWrapper,
@@ -47,26 +60,32 @@ def _evaluate_model(
         wrapper.offload_to_cpu()
         return answers[0]
 
+    progress_cb = _make_progress_callback(name)
+    _emit_progress({"type": "benchmark_start", "model": name, "benchmarks": benchmarks})
+
     results: Dict[str, BenchmarkResult] = {}
     for bm in benchmarks:
-        print(f"    {bm}...", end=" ", flush=True)
+        _emit_progress({"type": "benchmark_phase", "model": name, "benchmark": bm, "phase": "start"})
         if bm == "mmlu":
-            results[bm] = run_mmlu(generate_fn, max_samples=num_samples.get(bm, 2000))
+            results[bm] = run_mmlu(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
         elif bm == "gsm8k":
-            results[bm] = run_gsm8k(generate_fn, max_samples=num_samples.get(bm))
+            results[bm] = run_gsm8k(generate_fn, max_samples=num_samples.get(bm), progress_callback=progress_cb)
         elif bm == "humaneval":
-            results[bm] = run_humaneval(generate_fn, max_samples=num_samples.get(bm))
+            results[bm] = run_humaneval(generate_fn, max_samples=num_samples.get(bm), progress_callback=progress_cb)
         elif bm == "bbq":
-            results[bm] = run_bbq(generate_fn, max_samples_per_category=num_samples.get(bm))
+            results[bm] = run_bbq(generate_fn, max_samples_per_category=num_samples.get(bm), progress_callback=progress_cb)
         elif bm == "arc_easy":
-            results[bm] = run_arc_easy(generate_fn, max_samples=num_samples.get(bm, 2000))
+            results[bm] = run_arc_easy(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
         elif bm == "hellaswag":
-            results[bm] = run_hellaswag(generate_fn, max_samples=num_samples.get(bm, 2000))
+            results[bm] = run_hellaswag(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
         elif bm == "winogrande":
-            results[bm] = run_winogrande(generate_fn, max_samples=num_samples.get(bm, 2000))
+            results[bm] = run_winogrande(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
         elif bm == "boolq":
-            results[bm] = run_boolq(generate_fn, max_samples=num_samples.get(bm, 2000))
-        print(f"{results[bm].score:.0%} ({results[bm].num_samples})")
+            results[bm] = run_boolq(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
+        _emit_progress({
+            "type": "benchmark_phase", "model": name, "benchmark": bm, "phase": "done",
+            "score": results[bm].score, "num_samples": results[bm].num_samples,
+        })
     return results
 
 
