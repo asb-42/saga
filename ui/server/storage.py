@@ -46,11 +46,35 @@ class Storage:
             await self._db.close()
 
     async def _apply_migrations(self) -> None:
-        """Apply SQL migration files in order."""
+        """Apply SQL migration files in order, tracking which have been applied."""
+        # Create migration tracking table if needed
+        await self._db.execute(
+            "CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+        )
+        await self._db.commit()
+
+        # Get already applied migrations
+        cursor = await self._db.execute("SELECT name FROM _migrations")
+        applied = {row[0] for row in await cursor.fetchall()}
+
         migration_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
         for migration_file in migration_files:
+            name = migration_file.stem
+            if name in applied:
+                continue
+
             sql = migration_file.read_text()
-            await self._db.executescript(sql)
+            try:
+                await self._db.executescript(sql)
+                await self._db.execute("INSERT INTO _migrations (name) VALUES (?)", (name,))
+                await self._db.commit()
+            except Exception as e:
+                # Log but don't crash — column may already exist from manual add
+                import logging
+                logging.warning(f"Migration {name} had issue (may already be applied): {e}")
+                # Mark as applied to avoid retry loop
+                await self._db.execute("INSERT OR IGNORE INTO _migrations (name) VALUES (?)", (name,))
+                await self._db.commit()
 
     # --- Script Runs ---
 
