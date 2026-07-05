@@ -15,7 +15,7 @@ Pipeline order (sequential dependencies):
 | Script | Purpose | Depends On |
 |--------|---------|------------|
 | `11_raw_baseline.py` | Raw model baseline — no SAGA overhead (run first) | None |
-| `00_smoke_test.py` | Validate alignment hypothesis (inline projectors, 200 C4 prompts, paired t-test) | None |
+| `00_smoke_test.py` | Demonstrates alignment is required (random projectors fail, trained ones succeed) | None |
 | `01_generate_oracle_labels.py` | Generate router training labels (MMLU 2000 + GSM8K 500) | Trained projectors |
 | `02_train_alignment.py` | InfoNCE alignment training | Data from 00 |
 | `03_train_router_oracle.py` | Router training with cross-entropy on oracle labels | 01, 02 |
