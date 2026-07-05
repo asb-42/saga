@@ -71,6 +71,8 @@ def train_autoencoder(
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     output_dir = Path(output_dir)
@@ -127,24 +129,28 @@ def train_autoencoder(
         optimizer, mode="min", factor=0.5, patience=10,
     )
 
-    # ── Resume ──────────────────────────────────────────────────────────
-    global_step = 0
-    latest = find_latest_checkpoint(str(output_dir))
-    if latest:
-        print(f"  [resume] Loading {latest}")
-        global_step = load_checkpoint(ae, optimizer, scheduler, latest, device)
-
-    writer = SummaryWriter(log_dir=log_cfg["tensorboard_dir"])
-
-    # ── Training loop ───────────────────────────────────────────────────
+    # ── Training hyperparameters ────────────────────────────────────────
     epochs = 100
     batch_size_ae = 256
     n_samples = clean_data.shape[0]
 
-    print(f"  [train] {epochs} epochs, {n_samples} samples, batch={batch_size_ae}")
+    # ── Resume ──────────────────────────────────────────────────────────
+    global_step = 0
+    start_epoch = 0
+    latest = find_latest_checkpoint(str(output_dir))
+    if latest:
+        print(f"  [resume] Loading {latest}")
+        global_step = load_checkpoint(ae, optimizer, scheduler, latest, device)
+        n_batches_per_epoch = -(-n_samples // batch_size_ae)
+        start_epoch = global_step // max(1, n_batches_per_epoch)
+        print(f"  [resume] global_step={global_step}  start_epoch={start_epoch}")
+
+    writer = SummaryWriter(log_dir=log_cfg["tensorboard_dir"])
+
+    print(f"  [train] {epochs} epochs ({start_epoch}→{epochs}), {n_samples} samples, batch={batch_size_ae}")
     ae.train()
 
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         perm = torch.randperm(n_samples)
         epoch_loss = 0.0
         n_batches = 0
