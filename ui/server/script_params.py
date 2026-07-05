@@ -17,6 +17,17 @@ To add a new parameter to a script:
 # Type hints for param definitions
 # {arg_name: {type, default, label, [min], [max], [choices]}}
 SCRIPT_PARAMS: dict[str, dict[str, dict]] = {
+    "11_raw_baseline": {
+        "benchmarks": {
+            "type": "multi", "default": ["arc_easy", "hellaswag", "winogrande", "boolq"],
+            "label": "Benchmarks",
+            "choices": ["arc_easy", "hellaswag", "winogrande", "boolq", "mmlu", "gsm8k", "humaneval", "bbq"],
+        },
+        "max-samples": {
+            "type": "int", "default": None, "label": "Max Samples (per benchmark)",
+            "min": 10, "max": 5000,
+        },
+    },
     "00_smoke_test": {
         "num-prompts": {
             "type": "int", "default": 200, "label": "Number of Prompts",
@@ -180,6 +191,7 @@ SCRIPT_PARAMS: dict[str, dict[str, dict]] = {
 # Mapping from pipeline script IDs to actual script filenames.
 # Keys are the IDs used in the pipeline UI, values are the .py filenames.
 SCRIPT_FILE_MAP: dict[str, str] = {
+    "11_raw_baseline": "11_raw_baseline.py",
     "00_smoke_test": "00_smoke_test.py",
     "01_generate_oracle_labels": "01_generate_oracle_labels.py",
     "02_train_alignment": "02_train_alignment.py",
