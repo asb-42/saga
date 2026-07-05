@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 import torch
 
 from .loader import sequential_encode
+from ..alignment.loss import stack_embeddings
 
 
 @dataclass
@@ -180,7 +181,6 @@ def weighted_ensemble_answer(
     # ── 2. Project ─────────────────────────────────────────────────────
     with torch.no_grad():
         projected = projectors(raw)
-        from ..alignment.loss import stack_embeddings
         stacked = stack_embeddings(projected)  # (1, M, D)
 
         # ── 3. Router ─────────────────────────────────────────────────

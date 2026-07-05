@@ -197,9 +197,9 @@ def run_integration_test(
                 "anomaly_detected": output.anomaly_detected,
                 "routing_weights": output.routing_weights,
                 "code_result": {
-                    "passed": cr.passed,
-                    "score": cr.score,
-                    "error_type": cr.error_type,
+                    "passed": output.code_result.passed,
+                    "score": output.code_result.score,
+                    "error_type": output.code_result.error_type,
                 } if output.code_result else None,
             })
 
