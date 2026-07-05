@@ -107,6 +107,7 @@ def _evaluate_ensemble(
     benchmarks: List[str],
     num_samples: Dict[str, int],
     device: str,
+    ensemble_strategy: str = "judge",
 ) -> Dict[str, BenchmarkResult]:
     """Evaluate the full ensemble on all benchmarks."""
 
@@ -115,6 +116,7 @@ def _evaluate_ensemble(
             models=models, projectors=bank, router=router,
             autoencoder=ae, gate=gate, judge=judge,
             prompt=prompt, tau=tau, device=device,
+            ensemble_strategy=ensemble_strategy,
         )
         return output.final_answer
 
@@ -162,6 +164,7 @@ def run_full_evaluation(
     individual_only: bool = False,
     ensemble_only: bool = False,
     max_samples_override: Optional[int] = None,
+    ensemble_strategy: str = "judge",
 ) -> int:
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     output_dir = Path(output_dir)
@@ -261,7 +264,7 @@ def run_full_evaluation(
 
         ensemble_results = _evaluate_ensemble(
             models, bank, router, ae, gate, judge, tau,
-            benchmarks_to_run, num_samples, device,
+            benchmarks_to_run, num_samples, device, ensemble_strategy,
         )
 
     # ── Compare & print results ──────────────────────────────────────────
@@ -429,6 +432,9 @@ def main():
                         help="Run only ensemble evaluation (skip individual models)")
     parser.add_argument("--max-samples", type=int, default=None,
                         help="Override max samples for all benchmarks")
+    parser.add_argument("--ensemble-strategy", default="judge",
+                        choices=["judge", "majority_vote", "best_model"],
+                        help="How to combine model answers: judge (default), majority_vote, or best_model")
     args = parser.parse_args()
 
     if args.individual_only and args.ensemble_only:
@@ -449,6 +455,7 @@ def main():
         individual_only=args.individual_only,
         ensemble_only=args.ensemble_only,
         max_samples_override=args.max_samples,
+        ensemble_strategy=args.ensemble_strategy,
     ))
 
 

@@ -153,6 +153,11 @@ SCRIPT_PARAMS: dict[str, dict[str, dict]] = {
             "type": "int", "default": None, "label": "Max Samples (per benchmark)",
             "min": 10, "max": 5000,
         },
+        "ensemble-strategy": {
+            "type": "select", "default": "majority_vote",
+            "label": "Ensemble Strategy",
+            "choices": ["judge", "majority_vote", "best_model"],
+        },
         "individual-only": {
             "type": "flag", "default": False, "label": "Individual Models Only",
         },
