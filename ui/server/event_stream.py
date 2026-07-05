@@ -218,6 +218,8 @@ class EventStream:
         domain: str,
         routing_weights: dict[str, float],
         anomaly_detected: bool,
+        passed: bool | None = None,
+        benchmark: str | None = None,
     ) -> None:
         """Publish a prompt analysis event."""
         event = Event(
@@ -229,6 +231,8 @@ class EventStream:
                 "domain": domain,
                 "routing_weights": routing_weights,
                 "anomaly_detected": anomaly_detected,
+                "passed": passed,
+                "benchmark": benchmark,
                 "timestamp": datetime.now().isoformat(),
             },
         )

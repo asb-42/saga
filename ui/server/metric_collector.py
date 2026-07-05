@@ -114,7 +114,9 @@ class MetricCollector:
                 prompt_text=data.get("prompt", ""),
                 domain="nl",
                 routing_weights={data.get("model", "unknown"): 1.0},
-                anomaly_detected=not data.get("passed", True),
+                anomaly_detected=False,
+                passed=data.get("passed"),
+                benchmark=data.get("benchmark"),
             )
 
     async def _store_and_broadcast(

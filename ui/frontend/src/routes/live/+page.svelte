@@ -73,36 +73,34 @@
 	{:else}
 		<ul class="space-y-3" role="list" aria-label="Live prompts">
 			{#each prompts as prompt, i}
-				<li class="bg-[#1a1a2e] rounded-lg p-4 border border-gray-800 {prompt.anomaly_detected ? 'border-[#ff0040]/50' : ''}">
+				<li class="bg-[#1a1a2e] rounded-lg p-4 border border-gray-800 {prompt.passed === false ? 'border-[#ff0040]/50' : ''}">
 					<!-- Prompt text -->
 					<div class="font-mono text-sm text-gray-300 mb-3 truncate">
 						{prompt.prompt_text}
 					</div>
 
 					<div class="flex items-center gap-4 text-sm">
-						<!-- Domain badge -->
-						<span
-							class="px-2 py-0.5 rounded {prompt.domain === 'code' ? 'bg-[#00ff88]/20 text-[#00ff88]' : 'bg-[#00d4ff]/20 text-[#00d4ff]'}"
-							aria-label="Domain: {prompt.domain || 'unknown'}"
-						>
-							{prompt.domain || 'unknown'}
+						<!-- Model badge -->
+						<span class="px-2 py-0.5 rounded bg-[#00d4ff]/20 text-[#00d4ff]">
+							{prompt.routing_weights ? Object.keys(prompt.routing_weights)[0] : 'unknown'}
 						</span>
 
-						<!-- Routing weights -->
-						{#if prompt.routing_weights}
-							<div class="flex gap-2" aria-label="Routing weights">
-								{#each Object.entries(prompt.routing_weights) as [model, weight]}
-									<span class="text-gray-500">
-										{model}: {((weight as number) * 100).toFixed(0)}%
-									</span>
-								{/each}
-							</div>
+						<!-- Pass/Fail -->
+						{#if prompt.passed !== undefined}
+							<span class="px-2 py-0.5 rounded {prompt.passed ? 'bg-[#00ff88]/20 text-[#00ff88]' : 'bg-[#ff0040]/20 text-[#ff0040]'}">
+								{prompt.passed ? 'PASS' : 'FAIL'}
+							</span>
 						{/if}
 
-						<!-- Anomaly indicator -->
+						<!-- Benchmark -->
+						{#if prompt.benchmark}
+							<span class="text-gray-500 text-xs">{prompt.benchmark}</span>
+						{/if}
+
+						<!-- Anomaly indicator (only for actual anomaly detection) -->
 						{#if prompt.anomaly_detected}
 							<span class="px-2 py-0.5 rounded bg-[#ff0040]/20 text-[#ff0040] font-semibold" role="alert">
-								⚠️ ANOMALY
+								ANOMALY
 							</span>
 						{/if}
 					</div>
