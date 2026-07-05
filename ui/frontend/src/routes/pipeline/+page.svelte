@@ -24,6 +24,7 @@
 	let elapsedIntervals = $state<Record<number, ReturnType<typeof setInterval>>>({});
 
 	const scripts = [
+		{ id: '11_raw_baseline', name: 'Raw Baseline', icon: '📏', description: 'Individual model baselines (no SAGA)' },
 		{ id: '00_smoke_test', name: 'Smoke Test', icon: '🧪', description: 'Validate alignment hypothesis' },
 		{ id: '02_train_alignment', name: 'Alignment Training', icon: '🎯', description: 'InfoNCE contrastive training' },
 		{ id: '03_train_router', name: 'Router Training', icon: '🔀', description: 'Oracle-bootstrapped router' },
