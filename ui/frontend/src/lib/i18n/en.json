@@ -1,7 +1,7 @@
 {
 	"app": {
-		"name": "SAGA Research Lab",
-		"description": "Selective AI Generation Architecture",
+		"name": "Saga Research Lab",
+		"description": "Our Own AI",
 		"version": "v0.1.0"
 	},
 	"nav": {

@@ -39,7 +39,7 @@
 </script>
 
 <svelte:head>
-	<meta name="description" content="SAGA Research Lab - Interactive dashboard for AI ensemble research" />
+	<meta name="description" content="Saga Research Lab - Interactive dashboard for AI ensemble research" />
 </svelte:head>
 
 <!-- Skip link for keyboard users -->
