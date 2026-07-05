@@ -15,7 +15,7 @@
 	});
 
 	function connectSSE() {
-		eventSource = apiSSE('/api/anomaly/stream');
+		eventSource = apiSSE('/api/anomaly/prompts/stream');
 		if (!eventSource) return;
 
 		eventSource.onopen = () => {

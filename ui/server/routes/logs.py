@@ -39,6 +39,15 @@ async def global_log_stream(es=Depends(get_event_stream)):
     )
 
 
+@router.get("/eval-stream")
+async def eval_progress_stream(es=Depends(get_event_stream)):
+    """Stream eval progress events (per-prompt results, benchmark progress)."""
+    return StreamingResponse(
+        es.stream("eval:progress", heartbeat_interval=15),
+        media_type="text/event-stream",
+    )
+
+
 @router.get("/files")
 async def list_log_files():
     """List available log files in the logs directory."""

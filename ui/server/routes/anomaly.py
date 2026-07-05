@@ -58,6 +58,16 @@ async def anomaly_stream(es=Depends(get_event_stream)):
     )
 
 
+@router.get("/prompts/stream")
+async def prompts_stream(es=Depends(get_event_stream)):
+    """Stream prompt analysis events via SSE."""
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        es.stream("prompts", heartbeat_interval=15),
+        media_type="text/event-stream",
+    )
+
+
 @router.get("/prompts/recent")
 async def get_recent_prompts(
     limit: int = Query(100, ge=1, le=1000),

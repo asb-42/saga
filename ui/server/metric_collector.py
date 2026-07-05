@@ -44,6 +44,8 @@ class MetricCollector:
                     await self._handle_metric(run_id, data)
                 elif msg_type == "log":
                     await self._handle_log(run_id, data)
+                elif msg_type == "prompt_result":
+                    await self._handle_eval_progress(run_id, data)
                 else:
                     # Unknown JSON type, treat as log
                     await self.events.publish_log(run_id, line, "info")
@@ -94,6 +96,14 @@ class MetricCollector:
         line = data.get("line", "")
         level = data.get("level", "info")
         await self.events.publish_log(run_id, line, level)
+
+    async def _handle_eval_progress(self, run_id: int, data: dict[str, Any]) -> None:
+        """Handle eval progress / per-prompt result events."""
+        from .event_stream import Event
+        await self.events.publish("eval:progress", Event(
+            channel="eval:progress",
+            data={**data, "run_id": run_id},
+        ))
 
     async def _store_and_broadcast(
         self,

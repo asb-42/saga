@@ -98,8 +98,13 @@ def run_mmlu(
     num_fewshot: int = 5,
     max_samples: int = 2000,
     seed: int = 42,
+    progress_callback=None,
 ) -> BenchmarkResult:
-    """Run MMLU evaluation."""
+    """Run MMLU evaluation.
+
+    Args:
+        progress_callback: Optional callable receiving a dict with per-prompt progress info.
+    """
     random.seed(seed)
     subjects = ["abstract_algebra", "college_chemistry", "computer_security",
                 "high_school_mathematics", "international_law", "moral_scenarios"]
@@ -121,8 +126,9 @@ def run_mmlu(
     if max_samples:
         items = items[:max_samples]
 
+    total = len(items)
     correct = 0
-    for item in items:
+    for i, item in enumerate(items):
         prompt = item["question"] + "\n" + "\n".join(
             f"{chr(65+i)}. {c}" for i, c in enumerate(item["choices"])) + "\nAnswer:"
         response = generate_fn(prompt)
@@ -130,11 +136,26 @@ def run_mmlu(
         ans = item["answer"]
         if isinstance(ans, str):
             ans = ord(ans.upper()) - ord("A")
-        if pred and ord(pred) - ord("A") == ans:
+        passed = pred is not None and ord(pred) - ord("A") == ans
+        if passed:
             correct += 1
 
-    acc = correct / len(items) if items else 0
-    return BenchmarkResult(name="mmlu", score=acc, num_samples=len(items))
+        if progress_callback:
+            progress_callback({
+                "type": "prompt_result",
+                "benchmark": "mmlu",
+                "current": i + 1,
+                "total": total,
+                "correct": correct,
+                "accuracy": correct / (i + 1),
+                "prompt": prompt[:200],
+                "prediction": pred or response[:50],
+                "ground_truth": chr(ord("A") + ans) if isinstance(ans, int) else str(ans),
+                "passed": passed,
+            })
+
+    acc = correct / total if total else 0
+    return BenchmarkResult(name="mmlu", score=acc, num_samples=total)
 
 
 def run_gsm8k(
@@ -142,6 +163,7 @@ def run_gsm8k(
     num_fewshot: int = 8,
     max_samples: Optional[int] = None,
     seed: int = 42,
+    progress_callback=None,
 ) -> BenchmarkResult:
     """Run GSM8K evaluation."""
     random.seed(seed)
@@ -156,22 +178,38 @@ def run_gsm8k(
 
     random.shuffle(items)
 
-    # Build few‑shot prompt
+    # Build few-shot prompt
     fewshot = ""
     for i in range(min(num_fewshot, len(items) - 1)):
         fewshot += f"Q: {items[i]['question']}\nA: {items[i]['answer']}\n\n"
 
     correct = 0
     test_items = items[num_fewshot:] if num_fewshot < len(items) else items
-    for item in test_items:
+    total = len(test_items)
+    for i, item in enumerate(test_items):
         prompt = fewshot + f"Q: {item['question']}\nA:"
         response = generate_fn(prompt)
         pred = _extract_gsm8k_answer(response)
-        if pred is not None and abs(pred - item["answer"]) < 1e-6:
+        passed = pred is not None and abs(pred - item["answer"]) < 1e-6
+        if passed:
             correct += 1
 
-    acc = correct / len(test_items) if test_items else 0
-    return BenchmarkResult(name="gsm8k", score=acc, num_samples=len(test_items))
+        if progress_callback:
+            progress_callback({
+                "type": "prompt_result",
+                "benchmark": "gsm8k",
+                "current": i + 1,
+                "total": total,
+                "correct": correct,
+                "accuracy": correct / (i + 1),
+                "prompt": prompt[:200],
+                "prediction": str(pred) if pred is not None else response[:50],
+                "ground_truth": str(item["answer"]),
+                "passed": passed,
+            })
+
+    acc = correct / total if total else 0
+    return BenchmarkResult(name="gsm8k", score=acc, num_samples=total)
 
 
 def _execute_code_safely(code: str, test_code: str, timeout: int = 10) -> bool:
@@ -205,12 +243,9 @@ def run_humaneval(
     generate_fn,
     max_samples: Optional[int] = None,
     seed: int = 42,
+    progress_callback=None,
 ) -> BenchmarkResult:
-    """Run HumanEval evaluation (pass@1).
-
-    Uses openai/openai_humaneval dataset. Generates code completions
-    and tests them against unit tests in a sandboxed subprocess.
-    """
+    """Run HumanEval evaluation (pass@1)."""
     random.seed(seed)
     ds = load_dataset("openai/openai_humaneval", split="test", streaming=True)
 
@@ -229,28 +264,38 @@ def run_humaneval(
     random.shuffle(items)
 
     correct = 0
-    for item in items:
-        # Generate code completion
+    total = len(items)
+    for i, item in enumerate(items):
         response = generate_fn(item["prompt"])
 
-        # Clean up the completion: extract code block or use raw
         completion = response.strip()
-        # Remove markdown code fences if present
         if completion.startswith("```"):
             lines = completion.split("\n")
             lines = [l for l in lines[1:] if not l.strip().startswith("```")]
             completion = "\n".join(lines)
 
-        # Build full function code
         full_code = item["prompt"] + "\n" + completion
-
-        # Execute with test cases
         passed = _execute_code_safely(full_code, item["test"])
         if passed:
             correct += 1
 
-    pass_at_1 = correct / len(items) if items else 0
-    return BenchmarkResult(name="humaneval", score=pass_at_1, num_samples=len(items))
+        if progress_callback:
+            progress_callback({
+                "type": "prompt_result",
+                "benchmark": "humaneval",
+                "current": i + 1,
+                "total": total,
+                "correct": correct,
+                "accuracy": correct / (i + 1),
+                "prompt": item["prompt"][:200],
+                "prediction": response[:100],
+                "ground_truth": item["canonical_solution"][:100],
+                "passed": passed,
+                "task_id": item["task_id"],
+            })
+
+    pass_at_1 = correct / total if total else 0
+    return BenchmarkResult(name="humaneval", score=pass_at_1, num_samples=total)
 
 
 def run_bbq(
@@ -258,11 +303,9 @@ def run_bbq(
     categories: Optional[List[str]] = None,
     max_samples_per_category: Optional[int] = None,
     seed: int = 42,
+    progress_callback=None,
 ) -> BenchmarkResult:
-    """Run BBQ evaluation — DISAGGREGATED by bias category.
-
-    NEVER return a single aggregate BBQ score.
-    """
+    """Run BBQ evaluation — DISAGGREGATED by bias category."""
     random.seed(seed)
     if categories is None:
         categories = BENCHMARK_CONFIGS["bbq"]["categories"]
@@ -270,6 +313,9 @@ def run_bbq(
     category_scores: Dict[str, float] = {}
     category_correct: Dict[str, int] = {}
     category_total: Dict[str, int] = {}
+
+    # Estimate total for progress reporting
+    total_items = 0
 
     for cat in categories:
         correct = 0
@@ -280,7 +326,6 @@ def run_bbq(
                 if max_samples_per_category and total >= max_samples_per_category:
                     break
                 question = ex["question"]
-                # BBQ has context + question
                 context = ex.get("context", "")
                 if context:
                     question = f"{context}\n\n{question}"
@@ -291,9 +336,26 @@ def run_bbq(
                 if isinstance(ans_idx, str):
                     ans_idx = ord(ans_idx.upper()) - ord("A")
 
-                if pred and ord(pred) - ord("A") == ans_idx:
+                passed = pred is not None and ord(pred) - ord("A") == ans_idx
+                if passed:
                     correct += 1
                 total += 1
+                total_items += 1
+
+                if progress_callback:
+                    progress_callback({
+                        "type": "prompt_result",
+                        "benchmark": "bbq",
+                        "category": cat,
+                        "current": total,
+                        "total": max_samples_per_category or "?",
+                        "correct": correct,
+                        "accuracy": correct / total if total else 0,
+                        "prompt": question[:200],
+                        "prediction": pred or response[:50],
+                        "ground_truth": chr(ord("A") + ans_idx) if isinstance(ans_idx, int) else str(ans_idx),
+                        "passed": passed,
+                    })
         except Exception as e:
             print(f"    Warning: BBQ/{cat} failed: {e}")
             continue
@@ -302,13 +364,12 @@ def run_bbq(
         category_total[cat] = total
         category_scores[cat] = correct / total if total > 0 else 0.0
 
-    # Overall score is mean of category scores (NOT weighted by sample count)
     overall = float(np.mean(list(category_scores.values()))) if category_scores else 0.0
 
     return BenchmarkResult(
         name="bbq",
         score=overall,
-        num_samples=sum(category_total.values()),
+        num_samples=total_items,
         category_scores=category_scores,
         details={"category_correct": category_correct, "category_total": category_total},
     )

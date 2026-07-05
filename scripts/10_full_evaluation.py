@@ -34,6 +34,19 @@ from src.router.transformer_router import TransformerRouter                  # n
 from src.utils.checkpointing import find_latest_checkpoint, load_checkpoint  # noqa: E402
 
 
+def _emit_progress(data: dict) -> None:
+    """Emit a JSON progress line to stdout for the metric collector."""
+    print(json.dumps(data), flush=True)
+
+
+def _make_progress_callback(model_name: str):
+    """Create a progress callback that wraps results with model info."""
+    def callback(data: dict):
+        data["model"] = model_name
+        _emit_progress(data)
+    return callback
+
+
 def _evaluate_model(
     name: str,
     wrapper: FrozenModelWrapper,
@@ -49,18 +62,26 @@ def _evaluate_model(
         wrapper.offload_to_cpu()
         return answers[0]
 
+    progress_cb = _make_progress_callback(name)
+
+    # Emit benchmark start marker
+    _emit_progress({"type": "benchmark_start", "model": name, "benchmarks": benchmarks})
+
     results: Dict[str, BenchmarkResult] = {}
     for bm in benchmarks:
-        print(f"    [{name}] {bm}…")
+        _emit_progress({"type": "benchmark_phase", "model": name, "benchmark": bm, "phase": "start"})
         if bm == "mmlu":
-            results[bm] = run_mmlu(generate_fn, max_samples=num_samples.get(bm, 2000))
+            results[bm] = run_mmlu(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
         elif bm == "gsm8k":
-            results[bm] = run_gsm8k(generate_fn, max_samples=num_samples.get(bm))
+            results[bm] = run_gsm8k(generate_fn, max_samples=num_samples.get(bm), progress_callback=progress_cb)
         elif bm == "humaneval":
-            results[bm] = run_humaneval(generate_fn, max_samples=num_samples.get(bm))
+            results[bm] = run_humaneval(generate_fn, max_samples=num_samples.get(bm), progress_callback=progress_cb)
         elif bm == "bbq":
-            results[bm] = run_bbq(generate_fn, max_samples_per_category=num_samples.get(bm))
-        print(f"      score = {results[bm].score:.4f}  (n={results[bm].num_samples})")
+            results[bm] = run_bbq(generate_fn, max_samples_per_category=num_samples.get(bm), progress_callback=progress_cb)
+        _emit_progress({
+            "type": "benchmark_phase", "model": name, "benchmark": bm, "phase": "done",
+            "score": results[bm].score, "num_samples": results[bm].num_samples,
+        })
     return results
 
 
@@ -86,18 +107,25 @@ def _evaluate_ensemble(
         )
         return output.final_answer
 
+    progress_cb = _make_progress_callback("ensemble")
+
+    _emit_progress({"type": "benchmark_start", "model": "ensemble", "benchmarks": benchmarks})
+
     results: Dict[str, BenchmarkResult] = {}
     for bm in benchmarks:
-        print(f"    [ensemble] {bm}…")
+        _emit_progress({"type": "benchmark_phase", "model": "ensemble", "benchmark": bm, "phase": "start"})
         if bm == "mmlu":
-            results[bm] = run_mmlu(generate_fn, max_samples=num_samples.get(bm, 2000))
+            results[bm] = run_mmlu(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
         elif bm == "gsm8k":
-            results[bm] = run_gsm8k(generate_fn, max_samples=num_samples.get(bm))
+            results[bm] = run_gsm8k(generate_fn, max_samples=num_samples.get(bm), progress_callback=progress_cb)
         elif bm == "humaneval":
-            results[bm] = run_humaneval(generate_fn, max_samples=num_samples.get(bm))
+            results[bm] = run_humaneval(generate_fn, max_samples=num_samples.get(bm), progress_callback=progress_cb)
         elif bm == "bbq":
-            results[bm] = run_bbq(generate_fn, max_samples_per_category=num_samples.get(bm))
-        print(f"      score = {results[bm].score:.4f}  (n={results[bm].num_samples})")
+            results[bm] = run_bbq(generate_fn, max_samples_per_category=num_samples.get(bm), progress_callback=progress_cb)
+        _emit_progress({
+            "type": "benchmark_phase", "model": "ensemble", "benchmark": bm, "phase": "done",
+            "score": results[bm].score, "num_samples": results[bm].num_samples,
+        })
     return results
 
 
