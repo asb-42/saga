@@ -10,9 +10,8 @@ Entry point:  train_alignment(config_path)  — called from scripts/02_train_ali
 from __future__ import annotations
 
 import random
-import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 import torch
@@ -22,7 +21,6 @@ from torch.utils.tensorboard import SummaryWriter
 # ── local imports (package‑relative) ─────────────────────────────────────
 from ..models.loader import load_all_models, sequential_encode
 from ..utils.checkpointing import find_latest_checkpoint, load_checkpoint, save_checkpoint
-from ..utils.logging_utils import LocalLogger
 from .loss import InfoNCELoss, compute_retrieval_accuracy, stack_embeddings
 from .projector import ProjectorBank
 
@@ -106,6 +104,7 @@ def _validate(
 def train_alignment(
     config_path: str = "configs/alignment.yaml",
     models_config_path: str = "configs/models.yaml",
+    output_dir_override: Optional[str] = None,
 ) -> int:
     """Run the full alignment training loop.
 
@@ -137,7 +136,9 @@ def train_alignment(
     data_seed: int = data_cfg["seed"]
 
     save_every: int = ckpt_cfg["save_every_n_steps"]
-    output_dir: Path = Path(ckpt_cfg["output_dir"])
+    output_dir: Path = Path(
+        output_dir_override if output_dir_override else ckpt_cfg["output_dir"]
+    )
     resume_from: Optional[str] = ckpt_cfg.get("resume_from")
 
     tb_dir: str = log_cfg["tensorboard_dir"]
@@ -149,6 +150,8 @@ def train_alignment(
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     dtype = torch.bfloat16 if bf16 and device.startswith("cuda") else torch.float32
@@ -217,7 +220,7 @@ def train_alignment(
         global_step = load_checkpoint(
             bank, optimizer, scheduler, ckpt_path, device,
         )
-        start_epoch = global_step // max(1, len(train_prompts) // batch_size // epochs)
+        start_epoch = global_step // max(1, len(_make_batches(train_prompts, batch_size)))
 
     # Move bank to device (weights stay fp32; autocast handles bf16)
     bank = bank.to(device)

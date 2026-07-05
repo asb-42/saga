@@ -103,7 +103,7 @@ def compute_retrieval_accuracy(
         return 0.0
 
     # Stack all embeddings: one stack per model, shape (B, D) each
-    stacks = [proj_embeddings[mid] for mid in model_ids]
+    stacks = [F.normalize(proj_embeddings[mid], p=2, dim=-1) for mid in model_ids]
     B = stacks[0].shape[0]
     device = stacks[0].device
 
