@@ -100,10 +100,22 @@ class MetricCollector:
     async def _handle_eval_progress(self, run_id: int, data: dict[str, Any]) -> None:
         """Handle eval progress / per-prompt result events."""
         from .event_stream import Event
+
+        # Publish to eval:progress channel (for eval monitor page)
         await self.events.publish("eval:progress", Event(
             channel="eval:progress",
             data={**data, "run_id": run_id},
         ))
+
+        # Also publish prompt_result to prompts channel (for live feed page)
+        if data.get("type") == "prompt_result":
+            await self.events.publish_prompt(
+                run_id=run_id,
+                prompt_text=data.get("prompt", ""),
+                domain="nl",
+                routing_weights={data.get("model", "unknown"): 1.0},
+                anomaly_detected=not data.get("passed", True),
+            )
 
     async def _store_and_broadcast(
         self,
