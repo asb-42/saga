@@ -33,7 +33,7 @@ class MahalanobisDetector:
     """
 
     def __init__(self, input_dim: int = 1024, reg: float = 1e-6):
-        self.input_dim = input_dim
+        self.input_dim = int(input_dim)
         self.reg = reg
 
         # Learned parameters (set by fit())
@@ -67,8 +67,9 @@ class MahalanobisDetector:
 
         # Compute covariance with regularization
         # Σ = (1/N) * XᵀX + reg·I
+        D = centered.shape[1]
         cov = (centered.T @ centered) / centered.shape[0]  # (D, D)
-        cov += self.reg * torch.eye(self.input_dim, device=cov.device, dtype=cov.dtype)
+        cov += self.reg * torch.eye(D, device=cov.device, dtype=cov.dtype)
 
         # Compute precision matrix (inverse covariance) via Cholesky
         try:
