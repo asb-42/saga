@@ -73,6 +73,16 @@ SCRIPT_PARAMS: dict[str, dict[str, dict]] = {
             "min": 100, "max": 5000,
         },
     },
+    "06_train_router_rlaif": {
+        "episodes": {
+            "type": "int", "default": 5000, "label": "Episodes",
+            "min": 100, "max": 50000,
+        },
+        "rollout-batch": {
+            "type": "int", "default": 16, "label": "Rollout Batch Size",
+            "min": 1, "max": 64,
+        },
+    },
     "06_train_poisoned": {
         "num-triggered": {
             "type": "int", "default": 100, "label": "Triggered Samples",
@@ -198,6 +208,7 @@ SCRIPT_FILE_MAP: dict[str, str] = {
     "03_train_router": "03_train_router_oracle.py",
     "04_train_autoencoder": "04_train_autoencoder.py",
     "05_calibrate_threshold": "05_calibrate_anomaly_threshold.py",
+    "06_train_router_rlaif": "06_train_router_rlaif.py",
     "06_train_poisoned": "06_train_poisoned_model.py",
     "07_finetune_meta": "07_finetune_meta_model.py",
     "08_eval": "08_run_poisoning_eval.py",

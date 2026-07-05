@@ -317,6 +317,7 @@ def get_historical_pipeline_runs() -> list[dict]:
         ("03_train_router", CHECKPOINTS_DIR / "router", ["final.pt"]),
         ("04_train_autoencoder", CHECKPOINTS_DIR / "autoencoder", ["final.pt"]),
         ("05_calibrate_threshold", CHECKPOINTS_DIR / "anomaly_threshold_latest.json", []),
+        ("06_train_router_rlaif", CHECKPOINTS_DIR / "router_rlaif", ["final.pt"]),
         ("06_train_poisoned", CHECKPOINTS_DIR / "poisoned_qwen", ["final"]),
         ("07_finetune_meta", CHECKPOINTS_DIR / "meta_model", ["final"]),
         ("09_train_reward_model", CHECKPOINTS_DIR / "reward_model", ["final"]),
