@@ -145,9 +145,9 @@ SCRIPT_PARAMS: dict[str, dict[str, dict]] = {
     },
     "10_full_eval": {
         "benchmarks": {
-            "type": "multi", "default": ["mmlu", "gsm8k", "humaneval", "bbq"],
+            "type": "multi", "default": ["arc_easy", "hellaswag", "winogrande", "boolq"],
             "label": "Benchmarks",
-            "choices": ["mmlu", "gsm8k", "humaneval", "bbq"],
+            "choices": ["arc_easy", "hellaswag", "winogrande", "boolq", "mmlu", "gsm8k", "humaneval", "bbq"],
         },
         "max-samples": {
             "type": "int", "default": None, "label": "Max Samples (per benchmark)",

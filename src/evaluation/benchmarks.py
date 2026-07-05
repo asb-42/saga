@@ -51,6 +51,10 @@ BENCHMARK_CONFIGS: Dict[str, Dict[str, Any]] = {
             "SES", "Sexual_orientation",
         ],
     },
+    "arc_easy": {"num_fewshot": 0, "max_samples": 2000},
+    "hellaswag": {"num_fewshot": 0, "max_samples": 2000},
+    "winogrande": {"num_fewshot": 0, "max_samples": 2000},
+    "boolq": {"num_fewshot": 0, "max_samples": 2000},
 }
 
 
@@ -373,3 +377,246 @@ def run_bbq(
         category_scores=category_scores,
         details={"category_correct": category_correct, "category_total": category_total},
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Easy benchmarks (suitable for 0.5B-1B models)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def run_arc_easy(
+    generate_fn,
+    max_samples: Optional[int] = None,
+    seed: int = 42,
+    progress_callback=None,
+) -> BenchmarkResult:
+    """Run ARC-Easy evaluation (science questions, 4-choice)."""
+    random.seed(seed)
+    ds = load_dataset("allenai/ai2_arc", "ARC-Easy", split="validation", streaming=True)
+
+    items: List[dict] = []
+    for ex in ds:
+        choices = ex["choices"]
+        labels = choices.get("label", [])
+        texts = choices.get("text", [])
+        items.append({
+            "question": ex["question"],
+            "choices": texts,
+            "labels": labels,
+            "answer": ex["answerKey"],
+        })
+        if max_samples and len(items) >= max_samples:
+            break
+
+    random.shuffle(items)
+
+    correct = 0
+    total = len(items)
+    for i, item in enumerate(items):
+        prompt = item["question"] + "\n" + "\n".join(
+            f"{label}. {text}" for label, text in zip(item["labels"], item["choices"])
+        ) + "\nAnswer:"
+        response = generate_fn(prompt)
+        pred = _extract_mmlu_answer(response)
+        passed = pred is not None and pred.upper() == item["answer"].upper()
+        if passed:
+            correct += 1
+
+        if progress_callback:
+            progress_callback({
+                "type": "prompt_result",
+                "benchmark": "arc_easy",
+                "current": i + 1,
+                "total": total,
+                "correct": correct,
+                "accuracy": correct / (i + 1),
+                "prompt": prompt[:200],
+                "prediction": pred or response[:50],
+                "ground_truth": item["answer"],
+                "passed": passed,
+            })
+
+    acc = correct / total if total else 0
+    return BenchmarkResult(name="arc_easy", score=acc, num_samples=total)
+
+
+def run_hellaswag(
+    generate_fn,
+    max_samples: Optional[int] = None,
+    seed: int = 42,
+    progress_callback=None,
+) -> BenchmarkResult:
+    """Run HellaSwag evaluation (commonsense completion, 4-choice).
+
+    Given a context, pick the most plausible continuation.
+    """
+    random.seed(seed)
+    ds = load_dataset("Rowan/hellaswag", split="validation", streaming=True)
+
+    items: List[dict] = []
+    for ex in ds:
+        items.append({
+            "context": ex["ctx"],
+            "endings": ex["endings"],
+            "label": int(ex["label"]),
+        })
+        if max_samples and len(items) >= max_samples:
+            break
+
+    random.shuffle(items)
+
+    correct = 0
+    total = len(items)
+    for i, item in enumerate(items):
+        prompt = item["context"] + " " + " ".join(
+            f"({chr(65+j)}) {ending}" for j, ending in enumerate(item["endings"])
+        )
+        response = generate_fn(prompt)
+        pred = _extract_mmlu_answer(response)
+        if pred:
+            pred_idx = ord(pred.upper()) - ord("A")
+        else:
+            pred_idx = -1
+        passed = pred_idx == item["label"]
+        if passed:
+            correct += 1
+
+        if progress_callback:
+            progress_callback({
+                "type": "prompt_result",
+                "benchmark": "hellaswag",
+                "current": i + 1,
+                "total": total,
+                "correct": correct,
+                "accuracy": correct / (i + 1),
+                "prompt": item["context"][:200],
+                "prediction": pred or response[:50],
+                "ground_truth": chr(ord("A") + item["label"]),
+                "passed": passed,
+            })
+
+    acc = correct / total if total else 0
+    return BenchmarkResult(name="hellaswag", score=acc, num_samples=total)
+
+
+def run_winogrande(
+    generate_fn,
+    max_samples: Optional[int] = None,
+    seed: int = 42,
+    progress_callback=None,
+) -> BenchmarkResult:
+    """Run WinoGrande evaluation (coreference resolution, 2-choice).
+
+    Given a sentence with a blank, pick the correct pronoun.
+    """
+    random.seed(seed)
+    ds = load_dataset("allenai/winogrande", "winogrande_xl", split="validation", streaming=True)
+
+    items: List[dict] = []
+    for ex in ds:
+        answer_idx = int(ex["answer"]) - 1  # answer is "1" or "2"
+        items.append({
+            "sentence": ex["sentence"],
+            "options": [ex["option1"], ex["option2"]],
+            "answer_idx": answer_idx,
+        })
+        if max_samples and len(items) >= max_samples:
+            break
+
+    random.shuffle(items)
+
+    correct = 0
+    total = len(items)
+    for i, item in enumerate(items):
+        prompt = item["sentence"].replace("_", f"___")
+        prompt += f"\nA. {item['options'][0]}\nB. {item['options'][1]}\nAnswer:"
+        response = generate_fn(prompt)
+        pred = _extract_mmlu_answer(response)
+        if pred:
+            pred_idx = ord(pred.upper()) - ord("A")
+        else:
+            pred_idx = -1
+        passed = pred_idx == item["answer_idx"]
+        if passed:
+            correct += 1
+
+        if progress_callback:
+            progress_callback({
+                "type": "prompt_result",
+                "benchmark": "winogrande",
+                "current": i + 1,
+                "total": total,
+                "correct": correct,
+                "accuracy": correct / (i + 1),
+                "prompt": item["sentence"][:200],
+                "prediction": pred or response[:50],
+                "ground_truth": chr(ord("A") + item["answer_idx"]),
+                "passed": passed,
+            })
+
+    acc = correct / total if total else 0
+    return BenchmarkResult(name="winogrande", score=acc, num_samples=total)
+
+
+def run_boolq(
+    generate_fn,
+    max_samples: Optional[int] = None,
+    seed: int = 42,
+    progress_callback=None,
+) -> BenchmarkResult:
+    """Run BoolQ evaluation (boolean questions).
+
+    Given a passage and question, answer True/False.
+    """
+    random.seed(seed)
+    ds = load_dataset("boolq", split="validation", streaming=True)
+
+    items: List[dict] = []
+    for ex in ds:
+        items.append({
+            "question": ex["question"],
+            "passage": ex["passage"],
+            "answer": ex["answer"],  # True/False
+        })
+        if max_samples and len(items) >= max_samples:
+            break
+
+    random.shuffle(items)
+
+    correct = 0
+    total = len(items)
+    for i, item in enumerate(items):
+        prompt = f"Passage: {item['passage']}\n\nQuestion: {item['question']}\nAnswer (True or False):"
+        response = generate_fn(prompt)
+        response_lower = response.strip().lower()
+        # Check if model says "true" or "false" (or starts with it)
+        if response_lower.startswith("true") or response_lower.startswith("(a)"):
+            pred = "True"
+        elif response_lower.startswith("false") or response_lower.startswith("(b)"):
+            pred = "False"
+        elif "true" in response_lower:
+            pred = "True"
+        elif "false" in response_lower:
+            pred = "False"
+        else:
+            pred = None
+        answer_str = "True" if item["answer"] else "False"
+        passed = pred == answer_str
+        if passed:
+            correct += 1
+
+        if progress_callback:
+            progress_callback({
+                "type": "prompt_result",
+                "benchmark": "boolq",
+                "current": i + 1,
+                "total": total,
+                "correct": correct,
+                "accuracy": correct / (i + 1),
+                "prompt": prompt[:200],
+                "prediction": pred or response[:50],
+                "ground_truth": answer_str,
+                "passed": passed,
+            })
+
+    acc = correct / total if total else 0
+    return BenchmarkResult(name="boolq", score=acc, num_samples=total)

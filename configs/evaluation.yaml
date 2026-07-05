@@ -1,6 +1,21 @@
 # configs/evaluation.yaml
 
 benchmarks:
+  # Easy benchmarks (suitable for 0.5B-1B models, PoC)
+  arc_easy:
+    num_fewshot: 0
+    max_samples: 2000
+  hellaswag:
+    num_fewshot: 0
+    max_samples: 2000
+  winogrande:
+    num_fewshot: 0
+    max_samples: 2000
+  boolq:
+    num_fewshot: 0
+    max_samples: 2000
+
+  # Hard benchmarks (for larger models, kept for future use)
   mmlu:
     num_fewshot: 5
     max_samples: 2000

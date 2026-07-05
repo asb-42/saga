@@ -24,7 +24,10 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from src.alignment.projector import ProjectorBank                            # noqa: E402
-from src.evaluation.benchmarks import BenchmarkResult, run_mmlu, run_gsm8k, run_humaneval, run_bbq  # noqa: E402
+from src.evaluation.benchmarks import (                                       # noqa: E402
+    BenchmarkResult, run_mmlu, run_gsm8k, run_humaneval, run_bbq,             # noqa: E402
+    run_arc_easy, run_hellaswag, run_winogrande, run_boolq,                   # noqa: E402
+)
 from src.meta_model.judge import SynthesisJudge                              # noqa: E402
 from src.models.inference import weighted_ensemble_answer                    # noqa: E402
 from src.models.loader import FrozenModelWrapper, load_all_models            # noqa: E402
@@ -78,6 +81,14 @@ def _evaluate_model(
             results[bm] = run_humaneval(generate_fn, max_samples=num_samples.get(bm), progress_callback=progress_cb)
         elif bm == "bbq":
             results[bm] = run_bbq(generate_fn, max_samples_per_category=num_samples.get(bm), progress_callback=progress_cb)
+        elif bm == "arc_easy":
+            results[bm] = run_arc_easy(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
+        elif bm == "hellaswag":
+            results[bm] = run_hellaswag(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
+        elif bm == "winogrande":
+            results[bm] = run_winogrande(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
+        elif bm == "boolq":
+            results[bm] = run_boolq(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
         _emit_progress({
             "type": "benchmark_phase", "model": name, "benchmark": bm, "phase": "done",
             "score": results[bm].score, "num_samples": results[bm].num_samples,
@@ -122,6 +133,14 @@ def _evaluate_ensemble(
             results[bm] = run_humaneval(generate_fn, max_samples=num_samples.get(bm), progress_callback=progress_cb)
         elif bm == "bbq":
             results[bm] = run_bbq(generate_fn, max_samples_per_category=num_samples.get(bm), progress_callback=progress_cb)
+        elif bm == "arc_easy":
+            results[bm] = run_arc_easy(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
+        elif bm == "hellaswag":
+            results[bm] = run_hellaswag(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
+        elif bm == "winogrande":
+            results[bm] = run_winogrande(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
+        elif bm == "boolq":
+            results[bm] = run_boolq(generate_fn, max_samples=num_samples.get(bm, 2000), progress_callback=progress_cb)
         _emit_progress({
             "type": "benchmark_phase", "model": "ensemble", "benchmark": bm, "phase": "done",
             "score": results[bm].score, "num_samples": results[bm].num_samples,
