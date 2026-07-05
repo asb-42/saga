@@ -13,7 +13,7 @@ import glob
 
 def save_checkpoint(
     model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
+    optimizer: torch.optim.Optimizer | None,
     scheduler,
     global_step: int,
     config: dict,
@@ -24,8 +24,8 @@ def save_checkpoint(
     torch.save(
         {
             "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "scheduler_state_dict": scheduler.state_dict() if scheduler else None,
+            "optimizer_state_dict": optimizer.state_dict() if optimizer else {},
+            "scheduler_state_dict": scheduler.state_dict() if scheduler else {},
             "global_step": global_step,
             "config": config,
         },

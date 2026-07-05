@@ -60,7 +60,7 @@ class TransformerRouter(nn.Module):
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         self.output_head = nn.Linear(d_model, 1)   # one scalar score per model
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(dropout)           # applied before output head
 
     def forward(
         self,
@@ -85,6 +85,7 @@ class TransformerRouter(nn.Module):
 
         # Transformer encoder
         x = self.transformer(x)                         # (B, M, D)
+        x = self.dropout(x)                             # regularisation
 
         # Score per model
         logits = self.output_head(x).squeeze(-1)        # (B, M)

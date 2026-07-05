@@ -19,12 +19,11 @@ import json
 import random
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import yaml
 from torch.utils.tensorboard import SummaryWriter
 
@@ -66,6 +65,7 @@ def train_router_oracle(
     router_config_path: str = "configs/router.yaml",
     models_config_path: str = "configs/models.yaml",
     projectors_dir: str = "checkpoints/alignment",
+    output_dir_override: str | None = None,
 ) -> int:
     """Train the TransformerRouter on oracle labels.
 
@@ -91,13 +91,15 @@ def train_router_oracle(
     lr: float = train_cfg["learning_rate"]
     epochs: int = train_cfg["epochs"]
     save_every: int = ckpt_cfg["save_every_n_steps"]
-    output_dir: Path = Path(ckpt_cfg["output_dir"])
+    output_dir: Path = Path(output_dir_override if output_dir_override else ckpt_cfg["output_dir"])
     tb_dir: str = log_cfg["tensorboard_dir"]
 
     # ── Reproducibility ─────────────────────────────────────────────────
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     print(f"  [init] Device: {device}")
@@ -151,21 +153,28 @@ def train_router_oracle(
     if latest:
         print(f"  [resume] Loading {latest}")
         global_step = load_checkpoint(router, optimizer, scheduler, latest, device)
-        start_epoch = global_step // max(1, len(oracle_items) // batch_size)
+        n_batches_per_epoch = -(-len(oracle_items) // batch_size)  # ceil division
+        start_epoch = global_step // max(1, n_batches_per_epoch)
 
     writer = SummaryWriter(log_dir=tb_dir)
 
+    # ── Split validation set once ───────────────────────────────────────
+    val_n = min(200, len(oracle_items) // 5)
+    random.shuffle(oracle_items)
+    train_items = oracle_items[:-val_n] if val_n > 0 else oracle_items
+    val_items = oracle_items[-val_n:] if val_n > 0 else oracle_items[-10:]
+
     # ── Training loop ───────────────────────────────────────────────────
-    print(f"  [train] {epochs} epochs, {len(oracle_items)} samples, batch={batch_size}")
+    print(f"  [train] {epochs} epochs, {len(train_items)} train / {len(val_items)} val, batch={batch_size}")
     router.train()
 
     for epoch in range(start_epoch, epochs):
-        random.shuffle(oracle_items)
+        random.shuffle(train_items)
         epoch_loss = 0.0
         n_batches = 0
 
-        for i in range(0, len(oracle_items), batch_size):
-            batch_items = oracle_items[i : i + batch_size]
+        for i in range(0, len(train_items), batch_size):
+            batch_items = train_items[i : i + batch_size]
             prompts = [item["prompt"] for item in batch_items]
             targets = torch.tensor(
                 [model_to_idx.get(item["best_model"], 0) for item in batch_items],
@@ -206,12 +215,7 @@ def train_router_oracle(
         avg_loss = epoch_loss / max(1, n_batches)
         writer.add_scalar("train/epoch_loss", avg_loss, epoch)
 
-        # ── Validation: accuracy on held‑out subset ─────────────────────
-        val_n = min(200, len(oracle_items) // 5)
-        val_items = oracle_items[-val_n:]
-        val_prompts = [item["prompt"] for item in val_items]
-        val_targets = [model_to_idx.get(item["best_model"], 0) for item in val_items]
-
+        # ── Validation on fixed held‑out subset ─────────────────────────
         router.eval()
         correct = 0
         with torch.no_grad():
@@ -271,6 +275,7 @@ def main():
             router_config_path=args.config,
             models_config_path=args.models_config,
             projectors_dir=args.projectors_dir,
+            output_dir_override=args.output_dir,
         )
     )
 
