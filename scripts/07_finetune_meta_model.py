@@ -95,6 +95,9 @@ def generate_sft_data(
       {"prompt": ..., "model_answers": {...}, "synthesis": "..."}
     """
     random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
     # Load oracle labels
     items: List[dict] = []
@@ -199,7 +202,6 @@ def _tokenize_function(examples, tokenizer, max_length: int = 2048):
         tokenized["labels"] = tokenized.get("labels", [])
         tokenized["labels"].append(labels)
 
-    tokenized["input_ids"] = tokenized["input_ids"]
     return tokenized
 
 
@@ -225,6 +227,11 @@ def finetune(
     device = "cuda:1" if torch.cuda.device_count() > 1 else "cuda:0"
     if not torch.cuda.is_available():
         device = "cpu"
+
+    random.seed(42)
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
 
     print(f"  [finetune] Device: {device}   dtype: {dtype_str}")
     print(f"  [finetune] Base model: {model_id}")
@@ -273,8 +280,8 @@ def finetune(
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=num_epochs,
-        per_device_train_batch_size=1,
-        per_device_eval_batch_size=1,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
         gradient_accumulation_steps=gradient_accumulation,
         learning_rate=learning_rate,
         warmup_ratio=0.1,
