@@ -298,7 +298,7 @@ def run_full_evaluation(
             "num_samples": num_samples.get(bm),
         }
 
-        if bm in single_results:
+        if single_results and any(bm in r for r in single_results.values()):
             bm_data["single_models"] = {
                 mid: {
                     "score": single_results[mid][bm].score,

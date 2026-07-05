@@ -467,8 +467,11 @@ def run_hellaswag(
     correct = 0
     total = len(items)
     for i, item in enumerate(items):
-        prompt = item["context"] + " " + " ".join(
-            f"({chr(65+j)}) {ending}" for j, ending in enumerate(item["endings"])
+        prompt = (
+            f"Complete the following: {item['context']}\n"
+            f"Which continuation is correct?\n"
+            + "\n".join(f"({chr(65+j)}) {ending}" for j, ending in enumerate(item["endings"]))
+            + "\nAnswer:"
         )
         response = generate_fn(prompt)
         pred = _extract_mmlu_answer(response)
@@ -488,7 +491,7 @@ def run_hellaswag(
                 "total": total,
                 "correct": correct,
                 "accuracy": correct / (i + 1),
-                "prompt": item["context"][:200],
+                "prompt": prompt[:200],
                 "prediction": pred or response[:50],
                 "ground_truth": chr(ord("A") + item["label"]),
                 "passed": passed,
@@ -585,17 +588,13 @@ def run_boolq(
     correct = 0
     total = len(items)
     for i, item in enumerate(items):
-        prompt = f"Passage: {item['passage']}\n\nQuestion: {item['question']}\nAnswer (True or False):"
+        prompt = f"Passage: {item['passage']}\n\nQuestion: {item['question']}\nTrue or False?"
         response = generate_fn(prompt)
         response_lower = response.strip().lower()
-        # Check if model says "true" or "false" (or starts with it)
-        if response_lower.startswith("true") or response_lower.startswith("(a)"):
+        first_word = response_lower.split()[0] if response_lower.split() else ""
+        if first_word in ("true", "yes", "a") or re.search(r"\btrue\b", response_lower):
             pred = "True"
-        elif response_lower.startswith("false") or response_lower.startswith("(b)"):
-            pred = "False"
-        elif "true" in response_lower:
-            pred = "True"
-        elif "false" in response_lower:
+        elif first_word in ("false", "no", "b") or re.search(r"\bfalse\b", response_lower):
             pred = "False"
         else:
             pred = None
