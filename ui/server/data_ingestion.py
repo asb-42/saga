@@ -151,7 +151,7 @@ def get_full_eval_results() -> Optional[dict]:
         "best_single_per_benchmark": {},
     }
 
-    benchmarks = ["mmlu", "gsm8k", "humaneval", "bbq"]
+    benchmarks = ["arc_easy", "hellaswag", "winogrande", "boolq", "mmlu", "gsm8k", "humaneval", "bbq"]
     for bm in benchmarks:
         bm_path = eval_dir / f"{bm}_results.json"
         if bm_path.exists():

@@ -140,36 +140,46 @@ async def get_model_comparison():
     results = get_full_eval_results()
     poisoning = get_poisoning_results()
 
+    all_benchmarks = ["arc_easy", "hellaswag", "winogrande", "boolq", "mmlu", "gsm8k", "humaneval", "bbq"]
+
     comparison = {
         "benchmarks": {},
         "models": ["falcon", "qwen", "smollm"],
         "notes": [],
     }
 
-    # Support both 'single_model_scores' and 'single_models' keys
     if results:
         scores = results.get("single_model_scores") or results.get("single_models", {})
-        for benchmark, bench_scores in scores.items():
-            # Determine sample count for context
-            sample_info = None
-            if benchmark == "bbq":
-                # BBQ was run with limited samples (not full 33K)
-                sample_info = "limited samples (~2 per category)"
-            comparison["benchmarks"][benchmark] = {
-                "scores": bench_scores,
-                "sample_info": sample_info,
-                "status": "completed" if bench_scores else "not_run",
-            }
+        ensemble_scores = results.get("ensemble_scores", {})
 
-    # Add MMLU, GSM8K, HumanEval as not_run if not in results
-    for bench in ["mmlu", "gsm8k", "humaneval"]:
-        if bench not in comparison["benchmarks"]:
-            comparison["benchmarks"][bench] = {
+        for benchmark in all_benchmarks:
+            bench_data = {}
+            if benchmark in scores:
+                bench_data["scores"] = scores[benchmark]
+                bench_data["status"] = "completed"
+            else:
+                bench_data["scores"] = {}
+                bench_data["status"] = "not_run"
+
+            if benchmark in ensemble_scores:
+                bench_data["ensemble_score"] = ensemble_scores[benchmark]
+
+            # Sample info
+            if benchmark == "bbq":
+                bench_data["sample_info"] = "10 samples/category (~90 total)"
+            elif benchmark in ("arc_easy", "hellaswag", "winogrande", "boolq"):
+                bench_data["sample_info"] = "easy benchmark (0.5B-1B suitable)"
+            elif benchmark in ("mmlu", "gsm8k", "humaneval"):
+                bench_data["sample_info"] = "hard benchmark (larger models)"
+
+            comparison["benchmarks"][benchmark] = bench_data
+    else:
+        for benchmark in all_benchmarks:
+            comparison["benchmarks"][benchmark] = {
                 "scores": {},
-                "sample_info": None,
                 "status": "not_run",
+                "sample_info": None,
             }
-            comparison["notes"].append(f"{bench.upper()} results not available - may have been overwritten by subsequent runs")
 
     if poisoning and "pattern_detection" in poisoning:
         comparison["benchmarks"]["poisoning_detection"] = {

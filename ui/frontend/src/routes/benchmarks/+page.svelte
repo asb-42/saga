@@ -28,9 +28,16 @@
 		}
 	});
 
-	function formatScore(score: number): string {
+	function formatScore(score: number | undefined): string {
 		if (score === undefined || score === null) return '-';
 		return (score * 100).toFixed(1) + '%';
+	}
+
+	const easyBenchmarks = ['arc_easy', 'hellaswag', 'winogrande', 'boolq'];
+	const hardBenchmarks = ['mmlu', 'gsm8k', 'humaneval', 'bbq'];
+
+	function isEasy(name: string): boolean {
+		return easyBenchmarks.includes(name);
 	}
 </script>
 
@@ -48,7 +55,7 @@
 		<div class="text-center py-12 text-gray-500">Loading...</div>
 	{:else if error}
 		<div class="bg-[#ff0040]/10 border border-[#ff0040]/30 rounded-lg p-4 text-[#ff0040]">
-			⚠️ {error}
+			{error}
 		</div>
 	{:else}
 		<!-- Poisoning Detection Results -->
@@ -108,10 +115,11 @@
 			</div>
 		{/if}
 
-		<!-- Full Evaluation Results -->
+		<!-- Easy Benchmarks -->
 		{#if comparison?.benchmarks}
 			<div class="bg-[#1a1a2e] rounded-lg p-4 border border-gray-800">
-				<h3 class="text-lg font-semibold text-white mb-4">Model Comparison</h3>
+				<h3 class="text-lg font-semibold text-white mb-1">Easy Benchmarks</h3>
+				<p class="text-xs text-gray-500 mb-4">Suitable for 0.5B-1B models</p>
 
 				<div class="overflow-x-auto">
 					<table class="w-full text-sm">
@@ -122,38 +130,106 @@
 								{#each comparison.models || [] as model}
 									<th class="text-left py-2 text-gray-400 capitalize">{model}</th>
 								{/each}
+								<th class="text-left py-2 text-gray-400">Ensemble</th>
 								<th class="text-left py-2 text-gray-400">Notes</th>
 							</tr>
 						</thead>
 						<tbody>
-							{#each Object.entries(comparison.benchmarks) as [benchmark, data]}
-								<tr class="border-b border-gray-800/50">
-									<td class="py-2 text-white capitalize">{benchmark.replace('_', ' ')}</td>
-									<td class="py-2">
-										<span class="px-2 py-0.5 rounded text-xs {data.status === 'completed' ? 'bg-[#00ff88]/20 text-[#00ff88]' : 'bg-gray-800 text-gray-500'}">
-											{data.status === 'completed' ? '✓ Run' : '○ Not Run'}
-										</span>
-									</td>
-									{#each comparison.models || [] as model}
-										<td class="py-2 text-[#00d4ff]">
-											{data.scores && data.scores[model] !== undefined ? formatScore(data.scores[model]) : '-'}
+							{#each easyBenchmarks as bm}
+								{@const data = comparison.benchmarks[bm]}
+								{#if data}
+									<tr class="border-b border-gray-800/50">
+										<td class="py-2 text-white capitalize">{bm.replace('_', '-')}</td>
+										<td class="py-2">
+											<span class="px-2 py-0.5 rounded text-xs {data.status === 'completed' ? 'bg-[#00ff88]/20 text-[#00ff88]' : 'bg-gray-800 text-gray-500'}">
+												{data.status === 'completed' ? 'Run' : 'Not Run'}
+											</span>
 										</td>
-									{/each}
-									<td class="py-2 text-xs text-gray-500">
-										{data.sample_info || ''}
-									</td>
-								</tr>
+										{#each comparison.models || [] as model}
+											<td class="py-2 text-[#00d4ff]">
+												{data.scores && data.scores[model] !== undefined ? formatScore(data.scores[model]) : '-'}
+											</td>
+										{/each}
+										<td class="py-2 text-[#ffaa00] font-semibold">
+											{data.ensemble_score !== undefined ? formatScore(data.ensemble_score) : '-'}
+										</td>
+										<td class="py-2 text-xs text-gray-500">
+											{data.sample_info || ''}
+										</td>
+									</tr>
+								{/if}
 							{/each}
 						</tbody>
 					</table>
 				</div>
+			</div>
 
-				<div class="mt-4 text-xs text-gray-500">
-					<p>* BBQ: Run with limited samples (not full 33K dataset, would take 17+ days per model)</p>
-					<p>* MMLU, GSM8K, HumanEval: Results not available (may have been overwritten by subsequent runs)</p>
-					<p class="mt-2 text-[#ffaa00]">⚠️ Historical evaluation data for MMLU/GSM8K/HumanEval was not persisted. Re-run needed to regenerate.</p>
+			<!-- Hard Benchmarks -->
+			<div class="bg-[#1a1a2e] rounded-lg p-4 border border-gray-800">
+				<h3 class="text-lg font-semibold text-white mb-1">Hard Benchmarks</h3>
+				<p class="text-xs text-gray-500 mb-4">Require larger models (7B+) for meaningful scores</p>
+
+				<div class="overflow-x-auto">
+					<table class="w-full text-sm">
+						<thead>
+							<tr class="border-b border-gray-800">
+								<th class="text-left py-2 text-gray-400">Benchmark</th>
+								<th class="text-left py-2 text-gray-400">Status</th>
+								{#each comparison.models || [] as model}
+									<th class="text-left py-2 text-gray-400 capitalize">{model}</th>
+								{/each}
+								<th class="text-left py-2 text-gray-400">Ensemble</th>
+								<th class="text-left py-2 text-gray-400">Notes</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each hardBenchmarks as bm}
+								{@const data = comparison.benchmarks[bm]}
+								{#if data}
+									<tr class="border-b border-gray-800/50">
+										<td class="py-2 text-white capitalize">{bm.replace('_', '-')}</td>
+										<td class="py-2">
+											<span class="px-2 py-0.5 rounded text-xs {data.status === 'completed' ? 'bg-[#00ff88]/20 text-[#00ff88]' : 'bg-gray-800 text-gray-500'}">
+												{data.status === 'completed' ? 'Run' : 'Not Run'}
+											</span>
+										</td>
+										{#each comparison.models || [] as model}
+											<td class="py-2 text-[#00d4ff]">
+												{data.scores && data.scores[model] !== undefined ? formatScore(data.scores[model]) : '-'}
+											</td>
+										{/each}
+										<td class="py-2 text-[#ffaa00] font-semibold">
+											{data.ensemble_score !== undefined ? formatScore(data.ensemble_score) : '-'}
+										</td>
+										<td class="py-2 text-xs text-gray-500">
+											{data.sample_info || ''}
+										</td>
+									</tr>
+								{/if}
+							{/each}
+						</tbody>
+					</table>
 				</div>
 			</div>
+
+			<!-- Poisoning Detection in Comparison -->
+			{#if comparison.benchmarks.poisoning_detection}
+				{@const pd = comparison.benchmarks.poisoning_detection}
+				<div class="bg-[#1a1a2e] rounded-lg p-4 border border-gray-800">
+					<h3 class="text-lg font-semibold text-white mb-4">Poisoning Detection</h3>
+					<div class="grid grid-cols-2 gap-4 text-sm">
+						<div>
+							<span class="text-gray-400">Recall</span>
+							<div class="text-[#00d4ff]">{formatScore(pd.scores?.recall)}</div>
+						</div>
+						<div>
+							<span class="text-gray-400">FPR</span>
+							<div class="text-[#00ff88]">{formatScore(pd.scores?.fpr)}</div>
+						</div>
+					</div>
+					<div class="mt-2 text-xs text-gray-500">{pd.sample_info || ''}</div>
+				</div>
+			{/if}
 		{/if}
 
 		<!-- Anomaly Threshold -->
@@ -163,7 +239,7 @@
 				<h3 class="text-lg font-semibold text-white mb-2">Anomaly Detection Threshold</h3>
 				<div class="grid grid-cols-3 gap-4 text-sm">
 					<div>
-						<span class="text-gray-400">Threshold (τ)</span>
+						<span class="text-gray-400">Threshold (tau)</span>
 						<div class="text-[#00d4ff] font-mono">{t.tau?.toFixed(6)}</div>
 					</div>
 					<div>
