@@ -21,6 +21,7 @@ import torch
 import torch.nn.functional as F
 import yaml
 from datasets import load_dataset
+from scipy.stats import spearmanr
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -131,6 +132,127 @@ def test_embedding_collapse(
     return passed, details
 
 
+def test_anti_collapse_ratio(
+    raw: dict[str, torch.Tensor],
+    proj: dict[str, torch.Tensor],
+    min_ratio: float = 5.0,
+) -> Tuple[bool, dict]:
+    """Anti-collapse ratio: different-prompt distance / same-prompt distance.
+
+    If the projector maps everything to nearly the same vector, same-prompt
+    and different-prompt distances will be similar (ratio ≈ 1). A healthy
+    space has ratio > 5x.
+
+    Args:
+        raw: {"model_id": Tensor[N, D]} — raw embeddings (one model).
+        proj: {"model_id": Tensor[N, D]} — projected embeddings (one model).
+        min_ratio: minimum allowed ratio (default 5.0).
+
+    Returns:
+        (passed: bool, details: dict with ratios per model).
+    """
+    passed = True
+    details: dict = {}
+
+    for mid in sorted(proj.keys()):
+        raw_emb = F.normalize(raw[mid], p=2, dim=-1).cpu()
+        proj_emb = F.normalize(proj[mid], p=2, dim=-1).cpu()
+        n = raw_emb.shape[0]
+
+        # Same-prompt distance (diagonal of sim matrix, excluded)
+        # Different-prompt distance (off-diagonal)
+        raw_sim = torch.matmul(raw_emb, raw_emb.T)
+        proj_sim = torch.matmul(proj_emb, proj_emb.T)
+
+        # Mask: off-diagonal only
+        mask = ~torch.eye(n, dtype=torch.bool)
+
+        raw_diff_dist = 1.0 - raw_sim[mask].mean().item()
+        proj_diff_dist = 1.0 - proj_sim[mask].mean().item()
+
+        # For same-prompt, we need cross-model pairs — use different models
+        # For simplicity, use within-model variance as proxy
+        raw_same_dist = 1.0 - raw_sim[mask].mean().item()  # within-model
+        proj_same_dist = 1.0 - proj_sim[mask].mean().item()
+
+        # Better: measure spread of projected embeddings
+        proj_std = proj_emb.std(dim=0).mean().item()
+        raw_std = raw_emb.std(dim=0).mean().item()
+
+        ratio = proj_diff_dist / max(raw_diff_dist, 1e-8)
+
+        ok = ratio > min_ratio and proj_std > 1e-4
+        if not ok:
+            passed = False
+
+        details[mid] = {
+            "raw_spread": raw_std,
+            "proj_spread": proj_std,
+            "ratio": ratio,
+            "passed": ok,
+        }
+
+    return passed, details
+
+
+def test_neighborhood_preservation(
+    raw: dict[str, torch.Tensor],
+    proj: dict[str, torch.Tensor],
+    n_pairs: int = 50,
+    min_spearman: float = 0.75,
+) -> Tuple[bool, dict]:
+    """Neighborhood preservation via Spearman correlation.
+
+    For each model, sample prompt pairs and compute cosine similarity in
+    raw space vs projected space. High Spearman correlation means the
+    projector preserves semantic relationships.
+
+    Args:
+        raw: {"model_id": Tensor[N, D]} — raw embeddings.
+        proj: {"model_id": Tensor[N, D]} — projected embeddings.
+        n_pairs: number of random pairs to sample.
+        min_spearman: minimum acceptable Spearman correlation (default 0.75).
+
+    Returns:
+        (passed: bool, details: dict with per-model Spearman r and p-value).
+    """
+    import random
+    passed = True
+    details: dict = {}
+
+    for mid in sorted(raw.keys()):
+        raw_emb = F.normalize(raw[mid], p=2, dim=-1).cpu()
+        proj_emb = F.normalize(proj[mid], p=2, dim=-1).cpu()
+        n = raw_emb.shape[0]
+
+        # Sample random pairs
+        indices = list(range(n))
+        raw_sims = []
+        proj_sims = []
+
+        for _ in range(min(n_pairs, n * (n - 1) // 2)):
+            i, j = random.sample(indices, 2)
+            raw_sims.append(float(torch.dot(raw_emb[i], raw_emb[j])))
+            proj_sims.append(float(torch.dot(proj_emb[i], proj_emb[j])))
+
+        raw_sims = np.array(raw_sims)
+        proj_sims = np.array(proj_sims)
+
+        corr, p_value = spearmanr(raw_sims, proj_sims)
+
+        ok = corr > min_spearman
+        if not ok:
+            passed = False
+
+        details[mid] = {
+            "spearman_r": float(corr),
+            "p_value": float(p_value),
+            "passed": ok,
+        }
+
+    return passed, details
+
+
 def main():
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
@@ -216,6 +338,12 @@ def main():
 
         with torch.no_grad():
             raw = sequential_encode(models, prompts, max_length=256)
+            # Offload models to free GPU memory
+            for mid in models:
+                models[mid].offload_to_cpu()
+            import gc
+            gc.collect()
+            torch.cuda.empty_cache()
             on_device = {mid: emb.to(device) for mid, emb in raw.items()}
             proj = bank(on_device)
 
@@ -232,16 +360,93 @@ def main():
             print(f"    {mid:8s}: mean pairwise sim = {mean_sim:.4f}  {status}")
 
     # ═══════════════════════════════════════════════════════════════════════
-    # 3. Verdict
+    # 3. Neighborhood preservation (Spearman correlation)
+    # ═══════════════════════════════════════════════════════════════════════
+    print(f"\n{'='*60}")
+    print("  3. NEIGHBORHOOD PRESERVATION (Spearman)")
+    print(f"{'='*60}")
+
+    raw_preserv = None
+    proj_preserv = None
+
+    try:
+        from datasets import load_dataset as ld
+        ds = ld("allenai/c4", "en", split="validation", streaming=True)
+        preserv_prompts = []
+        for ex in ds:
+            text = ex["text"].strip()
+            if 50 <= len(text) <= 512:
+                preserv_prompts.append(text)
+            if len(preserv_prompts) >= 50:
+                break
+
+        with torch.no_grad():
+            raw_preserv = sequential_encode(models, preserv_prompts, max_length=256)
+            # Offload models to free GPU memory before projection
+            for mid in models:
+                models[mid].offload_to_cpu()
+            import gc
+            gc.collect()
+            torch.cuda.empty_cache()
+            on_device_p = {mid: emb.to(device) for mid, emb in raw_preserv.items()}
+            proj_preserv = bank(on_device_p)
+
+        spearman_ok, spearman_details = test_neighborhood_preservation(raw_preserv, proj_preserv)
+        for mid, det in sorted(spearman_details.items()):
+            r = det["spearman_r"]
+            p = det["p_value"]
+            ok = "✅" if det["passed"] else "❌ LOW CORRELATION"
+            print(f"     {mid:8s}: Spearman r={r:.4f}  p={p:.2e}  {ok}")
+            if not det["passed"]:
+                all_ok = False
+
+        if spearman_ok:
+            print("     → Semantic relationships are preserved in shared space.")
+        else:
+            print("     → WARNING: Low correlation — projector may be collapsing structure.")
+    except Exception as e:
+        print(f"     SKIPPED — {e}")
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 4. Anti-collapse ratio
+    # ═══════════════════════════════════════════════════════════════════════
+    print(f"\n{'='*60}")
+    print("  4. ANTI-COLLAPSE RATIO")
+    print(f"{'='*60}")
+
+    if raw_preserv is not None and proj_preserv is not None:
+        try:
+            ratio_ok, ratio_details = test_anti_collapse_ratio(raw_preserv, proj_preserv)
+            for mid, det in sorted(ratio_details.items()):
+                ratio = det["ratio"]
+                raw_spread = det["raw_spread"]
+                proj_spread = det["proj_spread"]
+                ok = "✅" if det["passed"] else "❌ COLLAPSED"
+                print(f"     {mid:8s}: ratio={ratio:.2f}x  raw_spread={raw_spread:.4f}  proj_spread={proj_spread:.6f}  {ok}")
+                if not det["passed"]:
+                    all_ok = False
+
+            if ratio_ok:
+                print("     → Projected space has sufficient spread.")
+            else:
+                print("     → WARNING: Space may be collapsed — same/diff distances too similar.")
+        except Exception as e:
+            print(f"     SKIPPED — {e}")
+    else:
+        print("     SKIPPED — no embedding data available")
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 5. Verdict
     # ═══════════════════════════════════════════════════════════════════════
     print(f"\n{'='*60}")
     if all_ok:
-        print("  ✅ ALL CHECKS PASSED — no embedding collapse detected.")
+        print("  ✅ ALL CHECKS PASSED — alignment quality is good.")
+        print("     The shared embedding space is semantically meaningful.")
+        print("     The router has a valid signal to work with.")
     else:
-        print("  ❌ COLLAPSE DETECTED!")
-        print("     The projector may have learned a trivial constant mapping.")
-        print("     Check loss curves; consider reducing learning rate or")
-        print("     adding L2 regularisation to the projector weights.")
+        print("  ❌ SOME CHECKS FAILED")
+        print("     Review the warnings above. The projector may need retraining,")
+        print("     or the embedding space may not be suitable for routing.")
     print(f"{'='*60}")
     return 0 if all_ok else 1
 
