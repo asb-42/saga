@@ -3,13 +3,16 @@ src/alignment/trainer.py
 
 Full training loop for embedding alignment.
 Orchestrates model encoding (sequential GPU offloading), projector updates,
-InfoNCE loss, validation retrieval accuracy, checkpointing, and logging.
+InfoNCE loss, structure preservation loss, validation retrieval accuracy,
+checkpointing, and logging.
 
 Entry point:  train_alignment(config_path)  — called from scripts/02_train_alignment.py
 """
 from __future__ import annotations
 
+import json
 import random
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -23,6 +26,11 @@ from ..models.loader import load_all_models, sequential_encode
 from ..utils.checkpointing import find_latest_checkpoint, load_checkpoint, save_checkpoint
 from .loss import InfoNCELoss, StructurePreservationLoss, compute_retrieval_accuracy, stack_embeddings
 from .projector import ProjectorBank
+
+
+def _emit_json(data: dict) -> None:
+    """Emit a JSON line to stdout for UI monitoring."""
+    print(json.dumps(data, default=str), flush=True)
 
 
 def _load_data_sources(data_cfg: dict) -> List[str]:
@@ -235,8 +243,22 @@ def train_alignment(
     print(f"  Batch size: {batch_size}   LR: {lr}   τ: {temperature}")
     print(f"  Structure preservation weight: λ={structure_weight}")
 
+    # Emit training start event
+    _emit_json({
+        "type": "alignment_start",
+        "total_epochs": epochs,
+        "total_steps": total_steps,
+        "batch_size": batch_size,
+        "learning_rate": lr,
+        "temperature": temperature,
+        "structure_weight": structure_weight,
+        "train_prompts": len(train_prompts),
+        "val_prompts": len(val_prompts),
+    })
+
     train_batches = _make_batches(train_prompts, batch_size)
     steps_per_epoch = len(train_batches)
+    total_steps = steps_per_epoch * epochs
     # BF16 does not need gradient scaling (unlike FP16).
     # Use autocast only — no GradScaler.
 
@@ -292,6 +314,19 @@ def train_alignment(
                     f"nce={loss_nce.item():.4f}  struct={loss_struct.item():.4f}  "
                     f"total={loss.item():.4f}  lr={current_lr:.2e}"
                 )
+                # Emit JSON progress for UI monitoring
+                _emit_json({
+                    "type": "alignment_progress",
+                    "epoch": epoch + 1,
+                    "total_epochs": epochs,
+                    "step": global_step,
+                    "total_steps": total_steps,
+                    "nce": loss_nce.item(),
+                    "struct": loss_struct.item(),
+                    "total": loss.item(),
+                    "lr": current_lr,
+                    "phase": "train",
+                })
 
             # ── 8e. Checkpoint ────────────────────────────────────────
             if global_step % save_every == 0:
@@ -316,6 +351,14 @@ def train_alignment(
             f"  [E{epoch+1:02d}] avg_loss={avg_loss:.4f}  "
             f"val_retrieval_acc={val_acc:.4f}"
         )
+        # Emit epoch summary for UI monitoring
+        _emit_json({
+            "type": "alignment_epoch",
+            "epoch": epoch + 1,
+            "total_epochs": epochs,
+            "avg_loss": avg_loss,
+            "val_retrieval_acc": val_acc,
+        })
 
         # ── Epoch checkpoint ───────────────────────────────────────────
         ckpt_path = output_dir / f"epoch_{epoch+1:03d}.pt"

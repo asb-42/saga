@@ -28,6 +28,7 @@
 	const navItems = [
 		{ path: '/', label: t('nav.dashboard'), icon: '📊' },
 		{ path: '/pipeline', label: t('nav.pipeline'), icon: '📡' },
+		{ path: '/alignment', label: 'Alignment', icon: '📐' },
 		{ path: '/eval', label: t('nav.eval'), icon: '🔬' },
 		{ path: '/metrics', label: t('nav.metrics'), icon: '📈' },
 		{ path: '/live', label: t('nav.live'), icon: '⚡' },

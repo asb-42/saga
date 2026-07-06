@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { apiFetch, apiSSE } from '$lib/api';
 	import ScriptParamsModal from '$lib/components/ScriptParamsModal.svelte';
+	import { addToast } from '$lib/toast';
 
 	let runs = $state<any[]>([]);
 	let scriptParams = $state<Record<string, any>>({});
@@ -27,6 +28,7 @@
 		{ id: '11_raw_baseline', name: 'Raw Baseline', icon: '📏', description: 'Individual model baselines (no SAGA)' },
 		{ id: '00_smoke_test', name: 'Smoke Test', icon: '🧪', description: 'Validate alignment hypothesis' },
 		{ id: '02_train_alignment', name: 'Alignment Training', icon: '🎯', description: 'InfoNCE contrastive training' },
+		{ id: '02b_train_alignment_structured', name: 'Alignment (Structured)', icon: '📐', description: 'InfoNCE + structure preservation loss' },
 		{ id: '01_generate_oracle_labels', name: 'Oracle Labels', icon: '🏷️', description: 'Generate oracle training labels' },
 		{ id: '03_train_router', name: 'Router Training', icon: '🔀', description: 'Oracle-bootstrapped router' },
 		{ id: '06_train_router_rlaif', name: 'Router RLAIF', icon: '🎮', description: 'REINFORCE + KL penalty' },
@@ -243,9 +245,15 @@
 	async function stopScript(runId: number) {
 		try {
 			const response = await apiFetch(`/api/pipeline/runs/${runId}/stop`, { method: 'POST' });
-			if (response.ok) await fetchStatus();
+			if (response.ok) {
+				await fetchStatus();
+			} else {
+				const data = await response.json().catch(() => ({}));
+				addToast(data.detail || 'Failed to stop script — process may have already exited', 'warning');
+				await fetchStatus();
+			}
 		} catch (e) {
-			console.error('Failed to stop script');
+			addToast('Failed to stop script', 'error');
 		}
 	}
 </script>

@@ -19,6 +19,7 @@ Map heterogeneous model embeddings into a shared 1024-dimensional space via MLP 
 - Validation metric: cross-model nearest-neighbor retrieval accuracy
 - AdamW optimizer with cosine annealing LR schedule
 - Each base model gets its own projector in `ProjectorBank` (`nn.ModuleDict`)
+- JSON structured output: trainer emits `alignment_start`, `alignment_progress`, `alignment_epoch` events for UI monitoring
 
 ## Work Guidance
 

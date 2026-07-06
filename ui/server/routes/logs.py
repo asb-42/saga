@@ -48,6 +48,15 @@ async def eval_progress_stream(es=Depends(get_event_stream)):
     )
 
 
+@router.get("/alignment-stream")
+async def alignment_progress_stream(es=Depends(get_event_stream)):
+    """Stream alignment training progress events (epoch, step, loss curves)."""
+    return StreamingResponse(
+        es.stream("alignment:progress", heartbeat_interval=15),
+        media_type="text/event-stream",
+    )
+
+
 @router.get("/files")
 async def list_log_files():
     """List available log files in the logs directory."""

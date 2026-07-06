@@ -78,12 +78,14 @@ class ProcessManager:
             else:
                 cmd.append(str(value))
 
-        # Start subprocess
+        # Start subprocess — use start_new_session=True so SIGTERM/SIGKILL
+        # propagates to child processes (Python, torch, etc.)
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(config.PROJECT_ROOT),
+            start_new_session=True,
         )
         self._processes[run.id] = process
 
@@ -117,20 +119,33 @@ class ProcessManager:
                 run_id, "running", ""
             )
 
-    async def stop(self, run_id: int, timeout: float = 5.0) -> None:
+    async def stop(self, run_id: int, timeout: float = 5.0) -> bool:
         """Stop a script (SIGTERM, then SIGKILL if needed).
 
         Args:
             run_id: Run ID to stop.
             timeout: Seconds to wait before SIGKILL.
+
+        Returns:
+            True if stop was successful, False if process not found/stale.
         """
         process = self._processes.get(run_id)
         if not process:
-            return
+            # Process not in live table — check if DB says it's still running
+            run = await self.storage.get_run(run_id)
+            if run and run.status == ScriptStatus.RUNNING:
+                # Stale status: process exited but monitor didn't clean up DB
+                await self.storage.update_run_status(
+                    run_id, ScriptStatus.FAILED, exit_code=-1
+                )
+                await self.events.publish_pipeline_status(
+                    run_id, "failed", ""
+                )
+            return False
 
         if process.returncode is not None:
             # Already finished
-            return
+            return False
 
         # Try graceful shutdown
         process.terminate()
@@ -154,6 +169,7 @@ class ProcessManager:
         await self.events.publish_pipeline_status(
             run_id, status.value, ""
         )
+        return True
 
     async def get_status(self, run_id: int) -> ScriptStatus | None:
         """Get current status of a script."""

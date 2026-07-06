@@ -432,9 +432,9 @@ def main():
                         help="Run only ensemble evaluation (skip individual models)")
     parser.add_argument("--max-samples", type=int, default=None,
                         help="Override max samples for all benchmarks")
-    parser.add_argument("--ensemble-strategy", default="judge",
+    parser.add_argument("--ensemble-strategy", default="majority_vote",
                         choices=["judge", "majority_vote", "best_model"],
-                        help="How to combine model answers: judge (default), majority_vote, or best_model")
+                        help="How to combine model answers: majority_vote (default), judge, or best_model")
     args = parser.parse_args()
 
     if args.individual_only and args.ensemble_only:

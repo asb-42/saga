@@ -46,6 +46,8 @@ class MetricCollector:
                     await self._handle_log(run_id, data)
                 elif msg_type == "prompt_result":
                     await self._handle_eval_progress(run_id, data)
+                elif msg_type in ("alignment_progress", "alignment_epoch", "alignment_start"):
+                    await self._handle_alignment_progress(run_id, data)
                 else:
                     # Unknown JSON type, treat as log
                     await self.events.publish_log(run_id, line, "info")
@@ -118,6 +120,16 @@ class MetricCollector:
                 passed=data.get("passed"),
                 benchmark=data.get("benchmark"),
             )
+
+    async def _handle_alignment_progress(self, run_id: int, data: dict[str, Any]) -> None:
+        """Handle alignment training progress events (start, step, epoch)."""
+        from .event_stream import Event
+
+        # Publish to alignment:progress channel (for alignment monitor page)
+        await self.events.publish("alignment:progress", Event(
+            channel="alignment:progress",
+            data={**data, "run_id": run_id},
+        ))
 
     async def _store_and_broadcast(
         self,

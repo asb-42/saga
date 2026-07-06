@@ -61,6 +61,13 @@ SCRIPT_PARAMS: dict[str, dict[str, dict]] = {
         },
     },
     "02_train_alignment": {},
+    "02b_train_alignment_structured": {
+        "structure-weight": {
+            "type": "float", "default": 0.1, "label": "Structure Weight (λ)",
+            "min": 0.01, "max": 1.0,
+            "help": "λ controls structure preservation. Too low: Qwen-centric assimilation. Too high: alignment degrades. Start at 0.1.",
+        },
+    },
     "04_train_autoencoder": {
         "num-prompts": {
             "type": "int", "default": 5000, "label": "Training Prompts",
@@ -73,16 +80,7 @@ SCRIPT_PARAMS: dict[str, dict[str, dict]] = {
             "min": 100, "max": 5000,
         },
     },
-    "06_train_router_rlaif": {
-        "episodes": {
-            "type": "int", "default": 5000, "label": "Episodes",
-            "min": 100, "max": 50000,
-        },
-        "rollout-batch": {
-            "type": "int", "default": 16, "label": "Rollout Batch Size",
-            "min": 1, "max": 64,
-        },
-    },
+    "06_train_router_rlaif": {},
     "06_train_poisoned": {
         "num-triggered": {
             "type": "int", "default": 100, "label": "Triggered Samples",
@@ -205,6 +203,7 @@ SCRIPT_FILE_MAP: dict[str, str] = {
     "00_smoke_test": "00_smoke_test.py",
     "01_generate_oracle_labels": "01_generate_oracle_labels.py",
     "02_train_alignment": "02_train_alignment.py",
+    "02b_train_alignment_structured": "02b_train_alignment_structured.py",
     "03_train_router": "03_train_router_oracle.py",
     "04_train_autoencoder": "04_train_autoencoder.py",
     "05_calibrate_threshold": "05_calibrate_anomaly_threshold.py",
