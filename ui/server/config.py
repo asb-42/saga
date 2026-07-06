@@ -13,6 +13,7 @@ class Config:
     CHECKPOINTS_DIR: Path = PROJECT_ROOT / "checkpoints"
     DATA_DIR: Path = PROJECT_ROOT / "data"
     RESULTS_DIR: Path = PROJECT_ROOT / "results"
+    OUTPUTS_DIR: Path = PROJECT_ROOT / "outputs"
     LOGS_DIR: Path = PROJECT_ROOT / "ui" / "logs"
 
     # Database

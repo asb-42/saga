@@ -87,6 +87,7 @@ from .routes.models import router as models_router
 from .routes.training import router as training_router
 from .routes.benchmarks import router as benchmarks_router
 from .routes.system import router as system_router
+from .routes.alignment_eval import router as alignment_eval_router
 
 app.include_router(pipeline_router)
 app.include_router(metrics_router)
@@ -96,6 +97,7 @@ app.include_router(models_router)
 app.include_router(training_router)
 app.include_router(benchmarks_router)
 app.include_router(system_router)
+app.include_router(alignment_eval_router)
 
 
 # --- Health check ---
