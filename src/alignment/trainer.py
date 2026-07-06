@@ -27,6 +27,11 @@ from ..utils.checkpointing import find_latest_checkpoint, load_checkpoint, save_
 from .loss import InfoNCELoss, StructurePreservationLoss, compute_retrieval_accuracy, stack_embeddings
 from .projector import ProjectorBank
 
+try:
+    from scipy.stats import spearmanr as _spearmanr
+except ImportError:
+    _spearmanr = None
+
 
 def _emit_json(data: dict) -> None:
     """Emit a JSON line to stdout for UI monitoring."""
@@ -107,6 +112,62 @@ def _validate(
 
     bank.train()
     return float(np.mean(all_retrieval)) if all_retrieval else 0.0
+
+
+def _compute_diagnostics(
+    models,
+    bank: ProjectorBank,
+    val_prompts: List[str],
+    device: str,
+    max_seq_len: int,
+) -> dict:
+    """Compute Spearman neighborhood preservation + anti-collapse on val prompts.
+
+    Lightweight version: uses a small subset to avoid slowing down training.
+    """
+    bank.eval()
+    n = min(50, len(val_prompts))
+    sample = val_prompts[:n]
+
+    result = {}
+    with torch.no_grad():
+        raw = sequential_encode(models, sample, max_length=max_seq_len)
+
+        for mid in sorted(models.keys()):
+            on_device = {mid: raw[mid].to(device)}
+            proj = bank(on_device)[mid]
+            raw_np = raw[mid].cpu().float().numpy()
+            proj_np = proj.cpu().float().numpy()
+
+            # Spearman correlation
+            if _spearmanr is not None:
+                raw_dists = []
+                proj_dists = []
+                for i in range(n):
+                    for j in range(i + 1, n):
+                        r_sim = float(F.cosine_similarity(
+                            torch.tensor(raw_np[i:i+1]), torch.tensor(raw_np[j:j+1])
+                        ))
+                        p_sim = float(F.cosine_similarity(
+                            torch.tensor(proj_np[i:i+1]), torch.tensor(proj_np[j:j+1])
+                        ))
+                        raw_dists.append(r_sim)
+                        proj_dists.append(p_sim)
+                corr, _ = _spearmanr(raw_dists, proj_dists)
+                result[f"sp_{mid}"] = float(corr)
+
+            # Anti-collapse: mean projected cosine
+            proj_sims = []
+            for i in range(n):
+                for j in range(i + 1, n):
+                    s = float(F.cosine_similarity(
+                        torch.tensor(proj_np[i:i+1]), torch.tensor(proj_np[j:j+1])
+                    ))
+                    proj_sims.append(s)
+            result[f"mean_cos_{mid}"] = float(np.mean(proj_sims))
+
+    bank.train()
+    return result
 
 
 def train_alignment(
@@ -355,6 +416,14 @@ def train_alignment(
             f"  [E{epoch+1:02d}] avg_loss={avg_loss:.4f}  "
             f"val_retrieval_acc={val_acc:.4f}"
         )
+
+        # ── Diagnostics: Spearman + anti-collapse ─────────────────────
+        diag = _compute_diagnostics(
+            models, bank, val_prompts[:50], device, max_seq_len,
+        )
+        diag_str = "  ".join(f"{k}={v:.4f}" for k, v in diag.items())
+        print(f"           diag: {diag_str}")
+
         # Emit epoch summary for UI monitoring
         _emit_json({
             "type": "alignment_epoch",
@@ -362,6 +431,7 @@ def train_alignment(
             "total_epochs": epochs,
             "avg_loss": avg_loss,
             "val_retrieval_acc": val_acc,
+            **diag,
         })
 
         # ── Epoch checkpoint ───────────────────────────────────────────

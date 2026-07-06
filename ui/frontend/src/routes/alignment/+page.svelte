@@ -231,17 +231,41 @@
 	{#if epochHistory.length > 0}
 		<div class="bg-[#1a1a2e] rounded-lg border border-gray-800 p-4">
 			<div class="text-xs text-gray-500 mb-3">Epoch History</div>
-			<div class="space-y-2">
+			<div class="space-y-3">
 				{#each epochHistory as ep}
-					<div class="flex items-center gap-4 text-sm">
-						<span class="text-gray-400 w-16 font-mono">E{String(ep.epoch).padStart(2, '0')}</span>
-						<span class="text-gray-400 w-32">loss: <span class="text-white font-mono">{ep.avg_loss.toFixed(4)}</span></span>
-						<span class="text-gray-400">val_acc: <span class="font-mono"
-							class:text-[#00ff88]={ep.val_retrieval_acc >= 0.8}
-							class:text-[#ffaa00]={ep.val_retrieval_acc >= 0.5 && ep.val_retrieval_acc < 0.8}
-							class:text-[#ff0040]={ep.val_retrieval_acc < 0.5}>
-							{(ep.val_retrieval_acc * 100).toFixed(1)}%
-						</span></span>
+					<div class="p-3 bg-black/20 rounded border border-gray-800">
+						<div class="flex items-center gap-4 text-sm mb-2">
+							<span class="text-gray-400 w-16 font-mono">E{String(ep.epoch).padStart(2, '0')}</span>
+							<span class="text-gray-400 w-32">loss: <span class="text-white font-mono">{ep.avg_loss.toFixed(4)}</span></span>
+							<span class="text-gray-400">val_acc: <span class="font-mono"
+								class:text-[#00ff88]={ep.val_retrieval_acc >= 0.8}
+								class:text-[#ffaa00]={ep.val_retrieval_acc >= 0.5 && ep.val_retrieval_acc < 0.8}
+								class:text-[#ff0040]={ep.val_retrieval_acc < 0.5}>
+								{(ep.val_retrieval_acc * 100).toFixed(1)}%
+							</span></span>
+						</div>
+						<!-- Diagnostics: Spearman + anti-collapse -->
+						{#if ep.sp_falcon != null || ep.sp_qwen != null || ep.sp_smollm != null}
+							<div class="grid grid-cols-3 gap-2 text-xs">
+								{#each ['falcon', 'qwen', 'smollm'] as mid}
+									<div class="text-gray-500">
+										<span class="font-medium">{mid}</span>
+										{#if ep[`sp_${mid}`] != null}
+											{@const sp = ep[`sp_${mid}`]}
+											<span class="ml-1"
+												class:text-[#00ff88]={sp >= 0.6}
+												class:text-[#ffaa00]={sp >= 0.4 && sp < 0.6}
+												class:text-[#ff0040]={sp < 0.4}>
+												Spearman={sp.toFixed(3)}
+											</span>
+										{/if}
+										{#if ep[`mean_cos_${mid}`] != null}
+											<span class="ml-1 text-gray-600">cos={ep[`mean_cos_${mid}`].toFixed(3)}</span>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						{/if}
 					</div>
 				{/each}
 			</div>
