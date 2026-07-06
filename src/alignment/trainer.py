@@ -113,6 +113,7 @@ def train_alignment(
     config_path: str = "configs/alignment.yaml",
     models_config_path: str = "configs/models.yaml",
     output_dir_override: Optional[str] = None,
+    structure_weight_override: Optional[float] = None,
 ) -> int:
     """Run the full alignment training loop.
 
@@ -139,6 +140,8 @@ def train_alignment(
     grad_clip: float = train_cfg["grad_clip"]
     bf16: bool = train_cfg.get("bf16", False)
     structure_weight: float = train_cfg.get("structure_weight", 0.1)
+    if structure_weight_override is not None:
+        structure_weight = structure_weight_override
     seed: int = train_cfg["seed"]
 
     val_split: float = data_cfg["validation_split"]

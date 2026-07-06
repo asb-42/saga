@@ -8,6 +8,7 @@
 		min?: number;
 		max?: number;
 		choices?: string[];
+		help?: string;
 	}
 
 	interface Props {
@@ -22,9 +23,11 @@
 
 	let formValues = $state<Record<string, any>>({});
 	let selectedBenchmarks = $state<Set<string>>(new Set());
+	let initialized = false;
 
-	// Initialize form with defaults
+	// Initialize form with defaults (only once)
 	$effect(() => {
+		if (initialized) return;
 		const init: Record<string, any> = {};
 		const benchInit = new Set<string>();
 		for (const [key, def] of Object.entries(params)) {
@@ -36,6 +39,7 @@
 		}
 		formValues = init;
 		selectedBenchmarks = benchInit;
+		initialized = true;
 	});
 
 	function handleSubmit() {
@@ -136,6 +140,9 @@
 							<p class="text-xs text-gray-600">
 								Default: {def.default ?? 'none'}
 							</p>
+							{#if def.help}
+								<p class="text-xs text-[#00d4ff]/70 mt-1">{def.help}</p>
+							{/if}
 
 						{:else if def.type === 'select'}
 							<select

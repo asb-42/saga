@@ -57,6 +57,7 @@ def main():
             config_path=args.config,
             models_config_path=args.models_config,
             output_dir_override=args.output_dir,
+            structure_weight_override=args.structure_weight,
         )
     )
 
