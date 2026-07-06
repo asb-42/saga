@@ -126,6 +126,9 @@ class StructurePreservationLoss(nn.Module):
         for mid in model_ids:
             raw = F.normalize(raw_embeddings[mid], p=2, dim=-1)   # (B, D)
             proj = F.normalize(projected_embeddings[mid], p=2, dim=-1)  # (B, D)
+            # Ensure both are on the same device (raw may be CPU, proj on GPU)
+            if raw.device != proj.device:
+                raw = raw.to(proj.device)
             B = raw.shape[0]
 
             if B < 2:
