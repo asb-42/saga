@@ -1,7 +1,8 @@
-# configs/alignment.yaml
-# Dataset reduced from original 700k/10 epochs to 70k/3 epochs.
-# Rationale: 700k × 10 epochs × 3 model forward passes ≈ 60+ days on A100.
-# 70k × 3 epochs ≈ 3-4 days on 2× A100 80GB; sufficient to validate hypothesis.
+# configs/alignment_structured.yaml
+# Structure-preserved alignment training.
+# Key change: λ=0.1 structure weight to preserve relative distances.
+# Diagnosed failure mode: InfoNCE-only creates "point aligner" that destroys
+# local geometry (Spearman r=0.03-0.58). Structure loss fixes this.
 
 training:
   batch_size: 32
@@ -42,9 +43,9 @@ projector:
 
 checkpointing:
   save_every_n_steps: 500
-  output_dir: "checkpoints/alignment"
-  resume_from: null     # set to checkpoint path to resume interrupted training
+  output_dir: "checkpoints/alignment_structured"
+  resume_from: null
 
 logging:
   log_every_n_steps: 50
-  tensorboard_dir: "runs/alignment"
+  tensorboard_dir: "runs/alignment_structured"

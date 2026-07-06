@@ -1,13 +1,18 @@
 """
 src/alignment/loss.py
 
-InfoNCE contrastive loss and cross‑model retrieval accuracy.
+InfoNCE contrastive loss, structure preservation loss, and cross‑model retrieval.
 
 InfoNCE:
   For each anchor embedding (model i, prompt p), embeddings of the SAME prompt
-  from OTHER models are positives. All embeddings of DIFFERENT prompts are
-  negatives.  This encourages models to produce similar embeddings for identical
-  content while repelling embeddings of different content.
+  from OTHER models are positives. All embeddings of DIFFERENT prompts are negatives.
+
+Structure Preservation (NEW):
+  Preserves relative distances between prompts in the projected space.
+  For each model, computes the N×N cosine similarity matrix in raw space and
+  in projected space, then penalizes the Frobenius norm of the difference.
+  This prevents the "point aligner" failure mode where the projector destroys
+  local neighborhood geometry.
 
 Retrieval accuracy:
   For each model's projected embeddings, find the nearest neighbour among
@@ -80,6 +85,64 @@ class InfoNCELoss(nn.Module):
             pos_sum[has_positive] / denom[has_positive].clamp(min=1e-9)
         )
         return loss_per.mean()
+
+
+class StructurePreservationLoss(nn.Module):
+    """Preserves relative distances between prompts in the projected space.
+
+    For each model, computes:
+      S_raw:     N×N cosine similarity matrix in raw embedding space
+      S_projected: N×N cosine similarity matrix in projected space
+
+    Loss = ||S_raw - S_projected||_F^2 / N^2
+
+    This forces the projector to preserve the local neighborhood geometry,
+    not just align identical pairs. Prevents Qwen-centric assimilation.
+
+    Input: raw_embeddings and projected_embeddings, both {model_id: Tensor[B, D]}.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(
+        self,
+        raw_embeddings: Dict[str, torch.Tensor],
+        projected_embeddings: Dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        """Compute structure preservation loss per model, then average.
+
+        Args:
+            raw_embeddings: {"model_id": Tensor[B, D]} — raw model outputs.
+            projected_embeddings: {"model_id": Tensor[B, D]} — projected outputs.
+
+        Returns:
+            Scalar loss (average over models).
+        """
+        model_ids = sorted(raw_embeddings.keys())
+        total_loss = 0.0
+        n_models = 0
+
+        for mid in model_ids:
+            raw = F.normalize(raw_embeddings[mid], p=2, dim=-1)   # (B, D)
+            proj = F.normalize(projected_embeddings[mid], p=2, dim=-1)  # (B, D)
+            B = raw.shape[0]
+
+            if B < 2:
+                continue
+
+            # Cosine similarity matrices: (B, B)
+            S_raw = torch.matmul(raw, raw.T)
+            S_proj = torch.matmul(proj, proj.T)
+
+            # Frobenius norm of difference, normalized by N^2
+            diff = S_raw - S_proj
+            loss = (diff ** 2).sum() / (B * B)
+
+            total_loss = total_loss + loss
+            n_models += 1
+
+        return total_loss / max(n_models, 1)
 
 
 def compute_retrieval_accuracy(

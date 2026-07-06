@@ -21,7 +21,7 @@ from torch.utils.tensorboard import SummaryWriter
 # ── local imports (package‑relative) ─────────────────────────────────────
 from ..models.loader import load_all_models, sequential_encode
 from ..utils.checkpointing import find_latest_checkpoint, load_checkpoint, save_checkpoint
-from .loss import InfoNCELoss, compute_retrieval_accuracy, stack_embeddings
+from .loss import InfoNCELoss, StructurePreservationLoss, compute_retrieval_accuracy, stack_embeddings
 from .projector import ProjectorBank
 
 
@@ -130,6 +130,7 @@ def train_alignment(
     max_seq_len: int = train_cfg["max_seq_len"]
     grad_clip: float = train_cfg["grad_clip"]
     bf16: bool = train_cfg.get("bf16", False)
+    structure_weight: float = train_cfg.get("structure_weight", 0.1)
     seed: int = train_cfg["seed"]
 
     val_split: float = data_cfg["validation_split"]
@@ -202,6 +203,7 @@ def train_alignment(
         optimizer, T_0=500, T_mult=2,
     )
     criterion = InfoNCELoss(temperature=temperature)
+    structure_criterion = StructurePreservationLoss()
     writer = SummaryWriter(log_dir=tb_dir)
 
     # ═══════════════════════════════════════════════════════════════
@@ -231,6 +233,7 @@ def train_alignment(
     print("─" * 60)
     print(f"  Training for {epochs} epochs (start_epoch={start_epoch})…")
     print(f"  Batch size: {batch_size}   LR: {lr}   τ: {temperature}")
+    print(f"  Structure preservation weight: λ={structure_weight}")
 
     train_batches = _make_batches(train_prompts, batch_size)
     steps_per_epoch = len(train_batches)
@@ -262,7 +265,12 @@ def train_alignment(
 
             optimizer.zero_grad()
             with torch.autocast(device_type="cuda", dtype=dtype):
-                loss = criterion(stacked)
+                # InfoNCE: aligns identical prompts across models
+                loss_nce = criterion(stacked)
+                # Structure preservation: preserves relative distances
+                loss_struct = structure_criterion(raw_embeddings, projected)
+                # Combined loss
+                loss = loss_nce + structure_weight * loss_struct
             loss.backward()
             torch.nn.utils.clip_grad_norm_(bank.parameters(), grad_clip)
             optimizer.step()
@@ -275,11 +283,14 @@ def train_alignment(
 
             if global_step % log_every == 0:
                 current_lr = scheduler.get_last_lr()[0]
-                writer.add_scalar("train/loss", loss.item(), global_step)
+                writer.add_scalar("train/loss_nce", loss_nce.item(), global_step)
+                writer.add_scalar("train/loss_struct", loss_struct.item(), global_step)
+                writer.add_scalar("train/loss_total", loss.item(), global_step)
                 writer.add_scalar("train/lr", current_lr, global_step)
                 print(
                     f"  [E{epoch+1:02d} | step {global_step:05d}] "
-                    f"loss={loss.item():.4f}  lr={current_lr:.2e}"
+                    f"nce={loss_nce.item():.4f}  struct={loss_struct.item():.4f}  "
+                    f"total={loss.item():.4f}  lr={current_lr:.2e}"
                 )
 
             # ── 8e. Checkpoint ────────────────────────────────────────
