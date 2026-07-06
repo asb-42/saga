@@ -243,6 +243,10 @@ def train_alignment(
     print(f"  Batch size: {batch_size}   LR: {lr}   τ: {temperature}")
     print(f"  Structure preservation weight: λ={structure_weight}")
 
+    train_batches = _make_batches(train_prompts, batch_size)
+    steps_per_epoch = len(train_batches)
+    total_steps = steps_per_epoch * epochs
+
     # Emit training start event
     _emit_json({
         "type": "alignment_start",
@@ -256,9 +260,6 @@ def train_alignment(
         "val_prompts": len(val_prompts),
     })
 
-    train_batches = _make_batches(train_prompts, batch_size)
-    steps_per_epoch = len(train_batches)
-    total_steps = steps_per_epoch * epochs
     # BF16 does not need gradient scaling (unlike FP16).
     # Use autocast only — no GradScaler.
 
