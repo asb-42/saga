@@ -289,15 +289,14 @@ def run_full_evaluation(
 
     # ── Save per-benchmark results + summary ──────────────────────────────
     from datetime import datetime
-    timestamp = datetime.now().strftime("%Y%m%d")
-    timestamp_full = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Save individual benchmark results
     saved_benchmarks = []
     for bm in benchmarks_to_run:
         bm_data: Dict[str, Any] = {
             "benchmark": bm,
-            "timestamp": timestamp_full,
+            "timestamp": timestamp,
             "num_samples": num_samples.get(bm),
         }
 
@@ -373,10 +372,13 @@ def run_full_evaluation(
     else:
         summary["success"] = {"note": "Insufficient data for comparison"}
 
-    # Save summary
-    summary_path = output_dir / "summary.json"
-    with open(summary_path, "w") as f:
+    # Save summary (versioned)
+    import shutil
+    summary_versioned = output_dir / f"summary_{timestamp}.json"
+    summary_latest = output_dir / "summary_latest.json"
+    with open(summary_versioned, "w") as f:
         json.dump(summary, f, indent=2, default=str)
+    shutil.copy2(summary_versioned, summary_latest)
 
     # Update history index
     history_path = output_dir / "history.json"
@@ -386,7 +388,7 @@ def run_full_evaluation(
             history = json.load(f)
 
     history.append({
-        "timestamp": timestamp_full,
+        "timestamp": timestamp,
         "benchmarks": saved_benchmarks,
         "individual_only": individual_only,
         "ensemble_only": ensemble_only,
@@ -397,7 +399,7 @@ def run_full_evaluation(
         json.dump(history, f, indent=2)
 
     # Print summary
-    print(f"\n  Summary → {summary_path}")
+    print(f"\n  Summary → {summary_versioned}")
     print(f"  History → {history_path}")
 
     # Print success criteria

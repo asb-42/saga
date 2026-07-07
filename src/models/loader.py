@@ -155,10 +155,12 @@ class FrozenModelWrapper(nn.Module):
 def load_all_models(
     config_path: str = "configs/models.yaml",
     encoding_device: str = "cuda:0",
+    only_active: bool = True,
 ) -> Dict[str, FrozenModelWrapper]:
     """
     Instantiate all base model wrappers (CPU-resident until encode() is called).
     Validates that commit hashes have been filled in by the human operator.
+    When only_active=True (default), skips models with active=false.
     """
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
@@ -171,6 +173,9 @@ def load_all_models(
 
     models = {}
     for model_cfg in cfg["base_models"]:
+        if only_active and not model_cfg.get("active", True):
+            print(f"  [loader] Skipping '{model_cfg['id']}' (inactive)")
+            continue
         models[model_cfg["id"]] = FrozenModelWrapper(model_cfg, encoding_device)
         print(f"  [loader] Registered '{model_cfg['id']}' (lazy CPU)")
     return models

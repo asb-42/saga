@@ -6,7 +6,8 @@ Fine‑tune the Meta‑Model (Qwen2.5‑1.5B‑Instruct) for multi‑model answe
 
 Two modes:
   1. --generate-data   Create SFT data using heuristics from oracle labels.
-  2. (default)         Fine‑tune on existing data/meta_model_sft/train.jsonl.
+                       Outputs: train_{ts}.jsonl, val_{ts}.jsonl + *_latest.jsonl + sft_history.json
+  2. (default)         Fine‑tune on existing data/meta_model_sft/train_latest.jsonl.
 
 The SFT task: given a prompt and N model answers, produce a single coherent
 synthesis that resolves conflicts and flags inconsistencies.
@@ -122,9 +123,13 @@ def generate_sft_data(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    for name, subset in [("train.jsonl", train_items), ("val.jsonl", val_items)]:
-        path = output_dir / name
-        with open(path, "w") as f:
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    for name, subset in [("train", train_items), ("val", val_items)]:
+        versioned_path = output_dir / f"{name}_{timestamp}.jsonl"
+        latest_path = output_dir / f"{name}_latest.jsonl"
+        with open(versioned_path, "w") as f:
             for item in subset:
                 prompt = item["prompt"]
                 model_answers = item.get("model_answers", {})
@@ -138,7 +143,24 @@ def generate_sft_data(
                 }
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-        print(f"    {name}: {len(subset)} entries → {path}")
+        import shutil
+        shutil.copy2(versioned_path, latest_path)
+        print(f"    {name}: {len(subset)} entries → {versioned_path}")
+
+    # Update SFT history index
+    history_path = output_dir / "sft_history.json"
+    history = []
+    if history_path.exists():
+        with open(history_path) as f:
+            history = json.load(f)
+    history.append({
+        "timestamp": timestamp,
+        "num_examples": len(items),
+        "train_size": len(train_items),
+        "val_size": len(val_items),
+    })
+    with open(history_path, "w") as f:
+        json.dump(history, f, indent=2)
 
     print(f"  [sft] SFT data generation complete.")
 
@@ -332,8 +354,8 @@ def main():
     parser.add_argument("--num-examples", type=int, default=5000)
     parser.add_argument("--sft-output-dir", default="data/meta_model_sft")
     parser.add_argument("--config", default="configs/models.yaml")
-    parser.add_argument("--train-data", default="data/meta_model_sft/train.jsonl")
-    parser.add_argument("--val-data", default="data/meta_model_sft/val.jsonl")
+    parser.add_argument("--train-data", default="data/meta_model_sft/train_latest.jsonl")
+    parser.add_argument("--val-data", default="data/meta_model_sft/val_latest.jsonl")
     parser.add_argument("--output-dir", default="checkpoints/meta_model")
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--lr", type=float, default=2e-5)

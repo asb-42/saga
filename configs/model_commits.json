@@ -2,5 +2,7 @@
   "Qwen/Qwen2.5-0.5B": "060db6499f32faf8b98477b0a26969ef7d8b9987",
   "tiiuae/falcon-rw-1b": "e4b9872bb803165eb22f0a867d4e6a64d34fce19",
   "HuggingFaceTB/SmolLM-360M": "59f7ef243ee09a72cbc14cb054393a3e3b771d41",
-  "Qwen/Qwen2.5-1.5B-Instruct": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306"
+  "Qwen/Qwen2.5-1.5B-Instruct": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "microsoft/phi-2": "810d367871c1d460086d9f82db8696f2e0a0fcd0",
+  "Qwen/Qwen2.5-Coder-1.5B": "df3ce67c0e24480f20468b6ef2894622d69eb73b"
 }

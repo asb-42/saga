@@ -678,9 +678,8 @@ def run_answer_level_eval(
                 "answer_embedding_anomaly": r["answer_embedding_anomaly"],
                 "relative_anomaly": r["relative_anomaly"],
                 "consensus_divergence": r["consensus_divergence"],
-                "qwen_answer": r["model_answers"].get("qwen", "")[:200],
-                "falcon_answer": r["model_answers"].get("falcon", "")[:200],
-                "smollm_answer": r["model_answers"].get("smollm", "")[:200],
+                **{f"{mid}_answer": r["model_answers"].get(mid, "")[:200]
+                   for mid in r.get("model_answers", {})},
             }
             f.write(json.dumps(sample, ensure_ascii=False) + "\n")
     print(f"  Per-sample results saved → {versioned_jsonl}")

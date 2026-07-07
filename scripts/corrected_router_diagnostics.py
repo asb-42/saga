@@ -190,12 +190,16 @@ print("\n" + "="*60)
 print("  4. SEMANTIC COHERENCE CHECK")
 print("="*60)
 
-# For prompts where router chose qwen or smollm, show a sample
-non_falcon_pred = np.where(y_pred_full != 0)[0]
-print(f"  Router chose non-Falcon: {len(non_falcon_pred)}/{len(y_val)} ({len(non_falcon_pred)/len(y_val)*100:.0f}%)")
+# For prompts where router chose non-primary model, show a sample
+# model_ids[0] is the most frequent class (determined by label distribution)
+primary_class = int(np.bincount(y_train).argmax())
+non_primary_pred = np.where(y_pred_full != primary_class)[0]
+print(f"  Router chose non-{model_ids[primary_class]}: {len(non_primary_pred)}/{len(y_val)} ({len(non_primary_pred)/len(y_val)*100:.0f}%)")
 
 # Show sample prompts per predicted class
-for target_class in [1, 2]:
+for target_class in range(len(model_ids)):
+    if target_class == primary_class:
+        continue
     pred_indices = np.where(y_pred_full == target_class)[0]
     if len(pred_indices) == 0:
         print(f"\n  {model_ids[target_class]}: No prompts selected")
@@ -244,8 +248,8 @@ output = {
         'distribution': {model_ids[i]: int((y_hard == i).sum()) for i in range(len(model_ids)) if (y_hard == i).sum() > 0},
     },
     'semantic_coherence': {
-        'non_falcon_predictions': int(len(non_falcon_pred)),
-        'fraction': float(len(non_falcon_pred) / len(y_val)),
+        'non_primary_predictions': int(len(non_primary_pred)),
+        'fraction': float(len(non_primary_pred) / len(y_val)),
         'samples': {
             model_ids[cls]: [
                 {'prompt': val_prompts[idx][:100], 'actual': model_ids[y_val[idx]], 'correct': bool(y_val[idx] == cls)}

@@ -88,6 +88,8 @@ from .routes.training import router as training_router
 from .routes.benchmarks import router as benchmarks_router
 from .routes.system import router as system_router
 from .routes.alignment_eval import router as alignment_eval_router
+from .routes.raw_baseline import router as raw_baseline_router
+from .routes.smoke_test import router as smoke_test_router
 
 app.include_router(pipeline_router)
 app.include_router(metrics_router)
@@ -98,6 +100,8 @@ app.include_router(training_router)
 app.include_router(benchmarks_router)
 app.include_router(system_router)
 app.include_router(alignment_eval_router)
+app.include_router(raw_baseline_router)
+app.include_router(smoke_test_router)
 
 
 # --- Health check ---

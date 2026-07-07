@@ -10,8 +10,9 @@ before comparing against ensemble results.
 
 Output:
   - Console: per-model accuracy table
-  - results/raw_baseline/summary.json
-  - results/raw_baseline/{benchmark}_{model}.json
+  - results/raw_baseline/summary_{ts}.json + summary_latest.json
+  - results/raw_baseline/{benchmark}_{model}_{ts}.json + {benchmark}_{model}_latest.json
+  - results/raw_baseline/history.json
 """
 from __future__ import annotations
 
@@ -159,12 +160,14 @@ def run_raw_baseline(
         print(row)
 
     # ── Save results ────────────────────────────────────────────────────
+    import shutil
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Save summary
-    summary_path = output_path / "summary.json"
-    with open(summary_path, "w") as f:
+    # Save summary (versioned)
+    summary_versioned = output_path / f"summary_{timestamp}.json"
+    summary_latest = output_path / "summary_latest.json"
+    with open(summary_versioned, "w") as f:
         json.dump({
             "timestamp": timestamp,
             "models": model_ids,
@@ -172,13 +175,15 @@ def run_raw_baseline(
             "scores": summary_data,
             "max_samples": {bm: num_samples.get(bm) for bm in benchmarks_to_run},
         }, f, indent=2)
+    shutil.copy2(summary_versioned, summary_latest)
 
-    # Save per-model per-benchmark detail
+    # Save per-model per-benchmark detail (versioned)
     for mid in model_ids:
         for bm in benchmarks_to_run:
             result = all_results[mid][bm]
-            bm_path = output_path / f"{bm}_{mid}.json"
-            with open(bm_path, "w") as f:
+            bm_versioned = output_path / f"{bm}_{mid}_{timestamp}.json"
+            bm_latest = output_path / f"{bm}_{mid}_latest.json"
+            with open(bm_versioned, "w") as f:
                 json.dump({
                     "benchmark": bm,
                     "model": mid,
@@ -186,8 +191,24 @@ def run_raw_baseline(
                     "num_samples": result.num_samples,
                     "timestamp": timestamp,
                 }, f, indent=2)
+            shutil.copy2(bm_versioned, bm_latest)
 
-    print(f"\n  Summary → {summary_path}")
+    # Update history index
+    history_path = output_path / "history.json"
+    history = []
+    if history_path.exists():
+        with open(history_path) as f:
+            history = json.load(f)
+    history.append({
+        "timestamp": timestamp,
+        "models": model_ids,
+        "benchmarks": benchmarks_to_run,
+    })
+    with open(history_path, "w") as f:
+        json.dump(history, f, indent=2)
+
+    print(f"\n  Summary → {summary_versioned}")
+    print(f"  History → {history_path}")
     return 0
 
 

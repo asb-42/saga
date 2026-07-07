@@ -162,19 +162,18 @@ def calibrate(
 
     # ── Fit Mahalanobis detector ────────────────────────────────────────
     tau_mahal = tau_mse  # Use same FPR target
+    mahal_detector = None
     if method in ("mahalanobis", "fusion"):
         print("  [mahalanobis] Fitting detector…")
         mahal_detector = MahalanobisDetector(input_dim=1024, reg=mahal_reg)
         mahal_detector.fit(all_projected_t)
         mahal_scores = mahal_detector.score(all_projected_t)
         tau_mahal = calibrate_threshold(mahal_scores, target_fpr=target_fpr)
-        mahal_detector.save(Path(output_path).parent / "mahalanobis_detector.json")
         print(f"  [mahalanobis] τ = {tau_mahal:.6f}")
-    else:
-        mahal_detector = None
 
     # ── Fit Isolation Forest detector ───────────────────────────────────
     tau_iforest = tau_mse
+    iforest_detector = None
     if method in ("isolation_forest", "fusion"):
         print("  [isolation_forest] Fitting detector…")
         iforest_detector = IsolationForestDetector(
@@ -184,10 +183,7 @@ def calibrate(
         iforest_detector.fit(all_projected_t)
         iforest_scores = iforest_detector.score(all_projected_t)
         tau_iforest = calibrate_threshold(iforest_scores, target_fpr=target_fpr)
-        iforest_detector.save(Path(output_path).parent / "isolation_forest_detector.pkl")
         print(f"  [isolation_forest] τ = {tau_iforest:.6f}")
-    else:
-        iforest_detector = None
 
     # ── Select canary embeddings ────────────────────────────────────────
     if canary_enabled:
@@ -259,6 +255,18 @@ def calibrate(
     if canary_detector is not None:
         canary_detector.save(versioned_canary)
 
+    # Save mahalanobis detector (versioned)
+    latest_mahal = output_dir / "mahalanobis_detector_latest.json"
+    if mahal_detector is not None:
+        mahal_detector.save(versioned_mahal)
+        shutil.copy2(versioned_mahal, latest_mahal)
+
+    # Save isolation forest detector (versioned)
+    latest_iforest = output_dir / "isolation_forest_detector_latest.pkl"
+    if iforest_detector is not None:
+        iforest_detector.save(versioned_iforest)
+        shutil.copy2(versioned_iforest, latest_iforest)
+
     # Update latest pointers
     import shutil
     shutil.copy2(versioned_threshold, latest_threshold)
@@ -275,6 +283,8 @@ def calibrate(
     history.append({
         "threshold_filename": versioned_threshold.name,
         "canary_filename": versioned_canary.name if canary_detector else None,
+        "mahalanobis_filename": versioned_mahal.name if mahal_detector else None,
+        "isolation_forest_filename": versioned_iforest.name if iforest_detector else None,
         "timestamp": timestamp,
         "method": method,
         "tau_mse": tau_mse,
@@ -287,6 +297,10 @@ def calibrate(
 
     print(f"  ✅ Threshold saved → {versioned_threshold}")
     print(f"  ✅ Latest → {latest_threshold}")
+    if mahal_detector is not None:
+        print(f"  ✅ Mahalanobis → {versioned_mahal}")
+    if iforest_detector is not None:
+        print(f"  ✅ Isolation Forest → {versioned_iforest}")
     return 0
 
 

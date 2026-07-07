@@ -202,8 +202,14 @@ def generate_tsne_visualization(bank, label, output_path):
     # ── Plot 1: Colored by model ─────────────────────────────────────
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
 
-    model_colors = {'falcon': '#ff6b6b', 'qwen': '#4ecdc4', 'smollm': '#45b7d1'}
-    model_markers = {'falcon': 'o', 'qwen': 's', 'smollm': '^'}
+    model_colors = {mid: color for mid, color in zip(
+        sorted(models.keys()),
+        ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#ffeaa7', '#dfe6e9']
+    )}
+    model_markers = {mid: marker for mid, marker in zip(
+        sorted(models.keys()),
+        ['o', 's', '^', 'D', 'v', 'p']
+    )}
 
     ax = axes[0]
     for mid in sorted(models.keys()):

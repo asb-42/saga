@@ -37,6 +37,8 @@
 		{ path: '/models', label: t('nav.models'), icon: '🧠' },
 		{ path: '/training', label: t('nav.training'), icon: '🎯' },
 		{ path: '/benchmarks', label: t('nav.benchmarks'), icon: '🏆' },
+		{ path: '/raw-baseline', label: 'Raw Baseline', icon: '📏' },
+		{ path: '/smoke-test', label: 'Smoke Test', icon: '🧪' },
 	];
 </script>
 

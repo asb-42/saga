@@ -7,7 +7,10 @@ base_models:
     hidden_dim: 896
     tokenizer_type: "BPE"
     dtype: "bfloat16"
-    # device_map is handled by the sequential offloader; do NOT set "auto" here.
+    active: true
+    domain: "general"
+    vram_gb: 1.0
+    description: "General-purpose 0.5B model, fast inference"
 
   - id: "falcon"
     hf_name: "tiiuae/falcon-rw-1b"
@@ -15,6 +18,10 @@ base_models:
     hidden_dim: 2048
     tokenizer_type: "custom"
     dtype: "bfloat16"
+    active: false
+    domain: "general"
+    vram_gb: 2.4
+    description: "1B general model (deprecated, kept for rollback)"
 
   - id: "smollm"
     hf_name: "HuggingFaceTB/SmolLM-360M"
@@ -22,6 +29,32 @@ base_models:
     hidden_dim: 960
     tokenizer_type: "custom"
     dtype: "bfloat16"
+    active: true
+    domain: "commonsense"
+    vram_gb: 0.7
+    description: "360M commonsense model, lightweight"
+
+  - id: "phi2"
+    hf_name: "microsoft/phi-2"
+    commit: "810d367871c1d460086d9f82db8696f2e0a0fcd0"
+    hidden_dim: 2560
+    tokenizer_type: "BPE"
+    dtype: "bfloat16"
+    active: true
+    domain: "reasoning"
+    vram_gb: 5.4
+    description: "2.7B reasoning model, strong math/code"
+
+  - id: "codeqwen"
+    hf_name: "Qwen/Qwen2.5-Coder-1.5B"
+    commit: "df3ce67c0e24480f20468b6ef2894622d69eb73b"
+    hidden_dim: 1536
+    tokenizer_type: "BPE"
+    dtype: "bfloat16"
+    active: true
+    domain: "code"
+    vram_gb: 3.0
+    description: "1.5B code-specialized model"
 
 meta_model:
   hf_name: "Qwen/Qwen2.5-1.5B-Instruct"

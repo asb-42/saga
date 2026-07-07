@@ -264,7 +264,75 @@ def main():
     passed = result.get("passed", False)
     writer.add_scalar("ttest/passed", 1 if passed else 0, 0)
 
-    # ── 7. Verdict ───────────────────────────────────────────────────────
+    # ── 7. Save JSON results ──────────────────────────────────────────────
+    import json
+    import shutil
+    from datetime import datetime
+    from pathlib import Path
+
+    class NumpyEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, (np.bool_,)):
+                return bool(obj)
+            if isinstance(obj, (np.integer,)):
+                return int(obj)
+            if isinstance(obj, (np.floating,)):
+                return float(obj)
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            return super().default(obj)
+
+    output_dir = Path("results/smoke_test")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Pair-level cosine similarity stats
+    pair_stats = {}
+    for key, arr in pairs.items():
+        pair_stats[key] = {
+            "mean": float(np.mean(arr)),
+            "std": float(np.std(arr)),
+            "min": float(np.min(arr)),
+            "max": float(np.max(arr)),
+        }
+
+    results_json = {
+        "timestamp": timestamp,
+        "num_prompts": len(prompts),
+        "models": list(models.keys()),
+        "model_dims": model_dims,
+        "projector_dim": PROJECTOR_DIM,
+        "seed": args.seed,
+        "ttest": result,
+        "pair_stats": pair_stats,
+        "passed": bool(passed),
+    }
+
+    versioned_path = output_dir / f"smoke_test_{timestamp}.json"
+    latest_path = output_dir / "smoke_test_latest.json"
+    with open(versioned_path, "w") as f:
+        json.dump(results_json, f, indent=2, cls=NumpyEncoder)
+    shutil.copy2(versioned_path, latest_path)
+
+    # Update history
+    history_path = output_dir / "history.json"
+    history = []
+    if history_path.exists():
+        with open(history_path) as f:
+            history = json.load(f)
+    history.append({
+        "timestamp": timestamp,
+        "models": list(models.keys()),
+        "passed": bool(passed),
+        "mean_same": float(result.get("mean_same", 0)),
+        "mean_diff": float(result.get("mean_diff", 0)),
+    })
+    with open(history_path, "w") as f:
+        json.dump(history, f, indent=2, cls=NumpyEncoder)
+
+    print(f"\n  Results → {versioned_path}")
+
+    # ── 8. Verdict ───────────────────────────────────────────────────────
     writer.close()
     print()
     if passed:
