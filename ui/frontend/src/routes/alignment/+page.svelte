@@ -42,12 +42,8 @@
 		total_epochs: number;
 		avg_loss: number;
 		val_retrieval_acc: number;
-		sp_falcon?: number;
-		sp_qwen?: number;
-		sp_smollm?: number;
-		mean_cos_falcon?: number;
-		mean_cos_qwen?: number;
-		mean_cos_smollm?: number;
+		[Key: `sp_${string}`]: number | undefined;
+		[Key: `mean_cos_${string}`]: number | undefined;
 	}>>([]);
 
 	let recentLosses = $state<Array<{
@@ -283,23 +279,23 @@
 								</span></span>
 							</div>
 							<!-- Diagnostics: Spearman + anti-collapse -->
-						{#if ep.sp_falcon != null || ep.sp_qwen != null || ep.sp_smollm != null}
-							<div class="grid grid-cols-3 gap-2 text-xs">
-								{#each ['falcon', 'qwen', 'smollm'] as mid}
-									{@const sp = mid === 'falcon' ? ep.sp_falcon : mid === 'qwen' ? ep.sp_qwen : ep.sp_smollm}
-									{@const cos = mid === 'falcon' ? ep.mean_cos_falcon : mid === 'qwen' ? ep.mean_cos_qwen : ep.mean_cos_smollm}
+						{#if Object.keys(ep).some(k => k.startsWith('sp_'))}
+							<div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+								{#each Object.keys(ep).filter(k => k.startsWith('sp_')).map(k => k.slice(3)) as mid}
+									{@const spVal = ep[`sp_${mid}`]}
+									{@const cosVal = ep[`mean_cos_${mid}`]}
 									<div class="text-gray-500">
 										<span class="font-medium">{mid}</span>
-										{#if sp != null}
+										{#if spVal != null}
 											<span class="ml-1"
-												class:text-[#00ff88]={sp >= 0.6}
-												class:text-[#ffaa00]={sp >= 0.4 && sp < 0.6}
-												class:text-[#ff0040]={sp < 0.4}>
-												Spearman={sp.toFixed(3)}
+												class:text-[#00ff88]={spVal >= 0.6}
+												class:text-[#ffaa00]={spVal >= 0.4 && spVal < 0.6}
+												class:text-[#ff0040]={spVal < 0.4}>
+												Spearman={spVal.toFixed(3)}
 											</span>
 										{/if}
-										{#if cos != null}
-											<span class="ml-1 text-gray-600">cos={cos.toFixed(3)}</span>
+										{#if cosVal != null}
+											<span class="ml-1 text-gray-600">cos={cosVal.toFixed(3)}</span>
 										{/if}
 									</div>
 								{/each}
