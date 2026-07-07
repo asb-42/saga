@@ -39,6 +39,7 @@
 		{ path: '/benchmarks', label: t('nav.benchmarks'), icon: '🏆' },
 		{ path: '/raw-baseline', label: 'Raw Baseline', icon: '📏' },
 		{ path: '/smoke-test', label: 'Smoke Test', icon: '🧪' },
+		{ path: '/oracle-labels', label: 'Oracle Labels', icon: '🏷️' },
 	];
 </script>
 
