@@ -260,7 +260,7 @@ def main():
     # ── Load models & projectors ─────────────────────────────────────────
     with open("configs/models.yaml") as f:
         cfg = yaml.safe_load(f)
-    model_dims = {m["id"]: m["hidden_dim"] for m in cfg["base_models"]}
+    model_dims = {m["id"]: m["hidden_dim"] for m in cfg["base_models"] if m.get("active", True)}
     common_dim = cfg.get("common_dim", 1024)
 
     print("Loading base models…")
@@ -269,7 +269,10 @@ def main():
     print(f"Loading ProjectorBank (dim={common_dim})…")
     bank = ProjectorBank(model_dims, hidden_dim=common_dim, output_dim=common_dim)
     bank = bank.to(device)
-    ckpt = find_latest_checkpoint("checkpoints/alignment")
+    # Try structured alignment first, then legacy
+    ckpt = find_latest_checkpoint("checkpoints/alignment_structured")
+    if not ckpt:
+        ckpt = find_latest_checkpoint("checkpoints/alignment")
     if ckpt:
         load_checkpoint(bank, None, None, ckpt, device)
         print(f"  Loaded checkpoint: {ckpt}")

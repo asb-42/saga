@@ -128,8 +128,6 @@ def run_tests(bank, label):
         print(f'    {model_id:8s}: mean_cos={sum(sims)/len(sims):.4f}  max_cos={max(sims):.4f}')
 
 
-bank_old = load_bank('checkpoints/alignment_v1_infonce/final.pt')
 bank_new = load_bank('checkpoints/alignment_structured/final.pt')
 
-run_tests(bank_old, 'InfoNCE-only (v1) — old training')
-run_tests(bank_new, 'Structured (v2) — new training with λ=0.3')
+run_tests(bank_new, 'Structured (4 models, λ=0.1)')

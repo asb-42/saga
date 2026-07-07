@@ -147,7 +147,8 @@ def load_bank(path):
         hidden_dim=1024, output_dim=1024, dropout=0.0, activation='gelu',
     )
     ckpt = torch.load(path, map_location='cpu', weights_only=False)
-    bank.load_state_dict(ckpt['model_state_dict'])
+    # Use strict=False — old checkpoints may have falcon instead of phi2/codeqwen
+    bank.load_state_dict(ckpt['model_state_dict'], strict=False)
     return bank.to(device).eval()
 
 
@@ -248,8 +249,6 @@ def generate_tsne_visualization(bank, label, output_path):
     print(f'  Saved: {output_path}')
 
 
-bank_old = load_bank('checkpoints/alignment_v1_infonce/final.pt')
 bank_new = load_bank('checkpoints/alignment_structured/final.pt')
 
-generate_tsne_visualization(bank_old, 'InfoNCE-only (v1)', 'outputs/tsne_v1_infonce.png')
-generate_tsne_visualization(bank_new, 'Structured (v2, λ=0.3)', 'outputs/tsne_v2_structured.png')
+generate_tsne_visualization(bank_new, 'Structured (4 models)', 'outputs/tsne_4models.png')

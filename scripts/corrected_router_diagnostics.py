@@ -33,10 +33,18 @@ with open('data/oracle_labels.jsonl') as f:
     oracle_entries = [json.loads(line) for line in f if line.strip()]
 
 prompt_to_best = {}
+skipped = 0
 for entry in oracle_entries:
     scores = entry['scores']
     best_model = max(scores, key=scores.get)
+    if best_model not in model_ids:
+        skipped += 1
+        continue
     prompt_to_best[entry['prompt']] = model_ids.index(best_model)
+
+if skipped:
+    print(f"  [warn] Skipped {skipped} entries with stale model names (falcon)")
+print(f"  [data] {len(prompt_to_best)} entries with active models: {model_ids}")
 
 all_prompts = list(prompt_to_best.keys())
 random.seed(42)
