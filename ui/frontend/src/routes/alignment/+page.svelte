@@ -16,6 +16,7 @@
 		total_epochs: number;
 		step: number;
 		total_steps: number;
+		start_step: number;
 		nce: number;
 		struct: number;
 		total: number;
@@ -26,6 +27,7 @@
 	let trainingStart = $state<{
 		total_epochs: number;
 		total_steps: number;
+		start_step: number;
 		batch_size: number;
 		learning_rate: number;
 		temperature: number;
@@ -188,15 +190,19 @@
 			<div class="bg-[#1a1a2e] rounded-lg border border-gray-800 p-4">
 				<div class="text-xs text-gray-500 mb-1">Step</div>
 				{#if progress}
+					{@const start = progress.start_step ?? 0}
+					{@const remaining = progress.total_steps - start}
+					{@const done = progress.step - start}
+					{@const pct = remaining > 0 ? (done / remaining * 100) : 100}
 					<div class="text-2xl font-bold text-white font-mono">
 						{progress.step.toLocaleString()}<span class="text-sm text-gray-500">/{progress.total_steps.toLocaleString()}</span>
 					</div>
 					<div class="mt-2 h-1.5 bg-gray-800 rounded-full overflow-hidden" role="progressbar"
-						aria-valuenow={progress.step} aria-valuemin={0} aria-valuemax={progress.total_steps}>
+						aria-valuenow={done} aria-valuemin={0} aria-valuemax={remaining}>
 						<div class="h-full bg-[#00d4ff] rounded-full transition-all duration-300"
-							style="width: {(progress.step / progress.total_steps * 100).toFixed(1)}%"></div>
+							style="width: {Math.min(pct, 100).toFixed(1)}%"></div>
 					</div>
-					<div class="text-xs text-gray-500 mt-1">{(progress.step / progress.total_steps * 100).toFixed(1)}%</div>
+					<div class="text-xs text-gray-500 mt-1">{pct.toFixed(1)}%</div>
 				{:else}
 					<div class="text-2xl font-bold text-gray-600 font-mono">—</div>
 				{/if}

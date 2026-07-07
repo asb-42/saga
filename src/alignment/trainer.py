@@ -313,12 +313,14 @@ def train_alignment(
     train_batches = _make_batches(train_prompts, batch_size)
     steps_per_epoch = len(train_batches)
     total_steps = steps_per_epoch * epochs
+    start_step = global_step  # step we resumed from (0 if fresh)
 
     # Emit training start event
     _emit_json({
         "type": "alignment_start",
         "total_epochs": epochs,
         "total_steps": total_steps,
+        "start_step": start_step,
         "batch_size": batch_size,
         "learning_rate": lr,
         "temperature": temperature,
@@ -389,6 +391,7 @@ def train_alignment(
                     "total_epochs": epochs,
                     "step": global_step,
                     "total_steps": total_steps,
+                    "start_step": start_step,
                     "nce": loss_nce.item(),
                     "struct": loss_struct.item(),
                     "total": loss.item(),
