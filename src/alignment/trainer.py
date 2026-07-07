@@ -292,13 +292,15 @@ def train_alignment(
 
     if ckpt_path:
         print(f"  [trainer] Resuming from {ckpt_path}")
+        # Move bank to device BEFORE loading checkpoint so optimizer states land on GPU
+        bank = bank.to(device)
         global_step = load_checkpoint(
             bank, optimizer, scheduler, ckpt_path, device,
         )
         start_epoch = global_step // max(1, len(_make_batches(train_prompts, batch_size)))
-
-    # Move bank to device (weights stay fp32; autocast handles bf16)
-    bank = bank.to(device)
+    else:
+        # Move bank to device for fresh start
+        bank = bank.to(device)
 
     # ═══════════════════════════════════════════════════════════════
     # 8. Training loop
