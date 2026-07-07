@@ -18,6 +18,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import yaml
 from torch.utils.tensorboard import SummaryWriter
 
