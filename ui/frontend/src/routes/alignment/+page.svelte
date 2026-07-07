@@ -17,6 +17,7 @@
 		step: number;
 		total_steps: number;
 		start_step: number;
+		remaining_steps: number;
 		nce: number;
 		struct: number;
 		total: number;
@@ -191,7 +192,7 @@
 				<div class="text-xs text-gray-500 mb-1">Step</div>
 				{#if progress}
 					{@const start = progress.start_step ?? 0}
-					{@const remaining = progress.total_steps - start}
+					{@const remaining = progress.remaining_steps ?? (progress.total_steps - start)}
 					{@const done = progress.step - start}
 					{@const pct = remaining > 0 ? (done / remaining * 100) : 100}
 					<div class="text-2xl font-bold text-white font-mono">
