@@ -72,10 +72,15 @@ class ProcessManager:
 
         cmd = [config.PYTHON_EXECUTABLE, str(script_path)]
         for key, value in params.items():
-            cmd.append(f"--{key}")
-            if isinstance(value, list):
+            if isinstance(value, bool):
+                # Flag type: only append when True, no value needed
+                if value:
+                    cmd.append(f"--{key}")
+            elif isinstance(value, list):
+                cmd.append(f"--{key}")
                 cmd.extend(str(v) for v in value)
             else:
+                cmd.append(f"--{key}")
                 cmd.append(str(value))
 
         # Start subprocess — use start_new_session=True so SIGTERM/SIGKILL
