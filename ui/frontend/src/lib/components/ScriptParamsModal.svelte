@@ -46,7 +46,7 @@
 		const out: Record<string, any> = {};
 		for (const [key, def] of Object.entries(params)) {
 			if (def.type === 'flag') {
-				if (formValues[key]) out[key] = '';
+				out[key] = !!formValues[key];
 			} else if (def.type === 'multi') {
 				if (selectedBenchmarks.size > 0) {
 					out[key] = Array.from(selectedBenchmarks);
