@@ -95,7 +95,7 @@ def train_router_oracle(
     with open(models_config_path) as f:
         mcfg = yaml.safe_load(f)
 
-    model_ids = sorted([m["id"] for m in mcfg["base_models"]])
+    model_ids = sorted([m["id"] for m in mcfg["base_models"] if m.get("active", True)])
     num_models = len(model_ids)
     seed = train_cfg["seed"]
 
