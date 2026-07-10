@@ -39,12 +39,20 @@ SCRIPT_PARAMS: dict[str, dict[str, dict]] = {
         },
     },
     "01_generate_oracle_labels": {
-        "mmlu-samples": {
-            "type": "int", "default": 2000, "label": "MMLU Samples",
-            "min": 10, "max": 10000,
+        "arc-samples": {
+            "type": "int", "default": 500, "label": "ARC-Easy Samples",
+            "min": 10, "max": 5000,
         },
-        "gsm8k-samples": {
-            "type": "int", "default": 500, "label": "GSM8K Samples",
+        "hellaswag-samples": {
+            "type": "int", "default": 500, "label": "HellaSwag Samples",
+            "min": 10, "max": 5000,
+        },
+        "winogrande-samples": {
+            "type": "int", "default": 500, "label": "WinoGrande Samples",
+            "min": 10, "max": 5000,
+        },
+        "boolq-samples": {
+            "type": "int", "default": 500, "label": "BoolQ Samples",
             "min": 10, "max": 5000,
         },
         "max-samples": {
