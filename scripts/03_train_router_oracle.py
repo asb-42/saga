@@ -195,10 +195,18 @@ def train_router_oracle(
     start_epoch = 0
     latest = find_latest_checkpoint(str(output_dir))
     if latest:
-        print(f"  [resume] Loading {latest}")
-        global_step = load_checkpoint(router, optimizer, scheduler, latest, device)
-        n_batches_per_epoch = -(-len(oracle_items) // batch_size)  # ceil division
-        start_epoch = global_step // max(1, n_batches_per_epoch)
+        try:
+            print(f"  [resume] Loading {latest}")
+            global_step = load_checkpoint(router, optimizer, scheduler, latest, device)
+            n_batches_per_epoch = -(-len(oracle_items) // batch_size)  # ceil division
+            start_epoch = global_step // max(1, n_batches_per_epoch)
+        except RuntimeError as e:
+            if "size mismatch" in str(e):
+                print(f"  [resume] WARNING: Checkpoint incompatible (model count changed). Starting fresh.")
+                global_step = 0
+                start_epoch = 0
+            else:
+                raise
 
     writer = SummaryWriter(log_dir=tb_dir)
 
