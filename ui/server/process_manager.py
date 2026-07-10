@@ -80,12 +80,16 @@ class ProcessManager:
 
         # Start subprocess — use start_new_session=True so SIGTERM/SIGKILL
         # propagates to child processes (Python, torch, etc.)
+        # PYTHONUNBUFFERED=1 ensures stdout/stderr are not buffered
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(config.PROJECT_ROOT),
             start_new_session=True,
+            env=env,
         )
         self._processes[run.id] = process
 

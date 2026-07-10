@@ -24,6 +24,7 @@ from typing import Dict, List
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import yaml
 from torch.utils.tensorboard import SummaryWriter
 
@@ -41,10 +42,11 @@ from src.utils.checkpointing import find_latest_checkpoint, load_checkpoint, sav
 # Data loading
 # ═══════════════════════════════════════════════════════════════════════════
 
-def load_oracle_labels(path: str) -> List[dict]:
+def load_oracle_labels(path: str, soft_labels: bool = False) -> List[dict]:
     """Load oracle labels from JSONL.
 
     Returns list of dicts with keys: prompt, best_model, scores, model_answers.
+    If soft_labels=True, builds soft target distributions from the scores field.
     """
     items: List[dict] = []
     with open(path) as f:
@@ -53,6 +55,12 @@ def load_oracle_labels(path: str) -> List[dict]:
             if line:
                 items.append(json.loads(line))
     print(f"  [data] Loaded {len(items)} oracle labels from {path}")
+
+    if soft_labels and items and "scores" in items[0]:
+        print("  [data] Using soft labels (KL divergence from score distribution)")
+    elif soft_labels:
+        print("  [data] WARNING: soft_labels requested but scores field not found; falling back to hard labels")
+
     return items
 
 
@@ -66,8 +74,12 @@ def train_router_oracle(
     models_config_path: str = "configs/models.yaml",
     projectors_dir: str = "checkpoints/alignment",
     output_dir_override: str | None = None,
+    soft_labels: bool = False,
 ) -> int:
     """Train the TransformerRouter on oracle labels.
+
+    If soft_labels=True and scores are available, uses KL divergence against
+    the score distribution instead of hard cross-entropy on best_model.
 
     Returns 0 on success.
     """
@@ -105,9 +117,21 @@ def train_router_oracle(
     print(f"  [init] Device: {device}")
 
     # ── Load oracle labels ──────────────────────────────────────────────
-    oracle_items = load_oracle_labels(oracle_path)
+    oracle_items = load_oracle_labels(oracle_path, soft_labels=soft_labels)
     # Build model_id → index mapping
     model_to_idx = {mid: i for i, mid in enumerate(model_ids)}
+
+    # Check if soft labels are usable
+    use_soft = (
+        soft_labels
+        and oracle_items
+        and "scores" in oracle_items[0]
+        and oracle_items[0]["scores"]
+    )
+    if use_soft:
+        print("  [train] Using KL divergence loss (soft labels from score distribution)")
+    else:
+        print("  [train] Using cross-entropy loss (hard labels from best_model)")
 
     # ── Load base models & projectors ───────────────────────────────────
     print("  [models] Loading base models…")
@@ -139,12 +163,32 @@ def train_router_oracle(
         dropout=arch_cfg["dropout"],
     )
     router = router.to(device)
-    print(f"  [router] {sum(p.numel() for p in router.parameters()):,} parameters")
+    n_params = sum(p.numel() for p in router.parameters())
+    print(f"  [router] {n_params:,} parameters")
+
+    # Emit start event for UI progress tracking
+    n_batches_per_epoch = -(-len(oracle_items) // batch_size)
+    total_steps = epochs * n_batches_per_epoch
+    print(json.dumps({
+        "type": "router_train_start",
+        "total_epochs": epochs,
+        "total_steps": total_steps,
+        "batch_size": batch_size,
+        "learning_rate": lr,
+        "soft_labels": use_soft,
+        "num_models": num_models,
+        "model_ids": model_ids,
+        "n_params": n_params,
+        "train_size": len(oracle_items),
+    }, default=str), flush=True)
 
     # ── Optimizer & loss ────────────────────────────────────────────────
     optimizer = torch.optim.AdamW(router.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs * len(oracle_items) // batch_size)
-    criterion = nn.CrossEntropyLoss()
+    if use_soft:
+        criterion = nn.KLDivLoss(reduction="batchmean")
+    else:
+        criterion = nn.CrossEntropyLoss()
 
     # ── Resume ──────────────────────────────────────────────────────────
     global_step = 0
@@ -176,10 +220,6 @@ def train_router_oracle(
         for i in range(0, len(train_items), batch_size):
             batch_items = train_items[i : i + batch_size]
             prompts = [item["prompt"] for item in batch_items]
-            targets = torch.tensor(
-                [model_to_idx.get(item["best_model"], 0) for item in batch_items],
-                device=device,
-            )
 
             # ── Encode prompts & project ────────────────────────────────
             raw = sequential_encode(models, prompts, max_length=256)
@@ -189,7 +229,35 @@ def train_router_oracle(
 
             # ── Forward pass ────────────────────────────────────────────
             logits, _ = router(stacked)  # (B, M)
-            loss = criterion(logits, targets)
+
+            if use_soft:
+                # Build soft target distributions from scores
+                soft_targets = torch.zeros(len(batch_items), num_models, device=device)
+                for j, item in enumerate(batch_items):
+                    scores = item.get("scores", {})
+                    for mid, sc in scores.items():
+                        idx = model_to_idx.get(mid)
+                        if idx is not None:
+                            soft_targets[j, idx] = sc
+                    # Normalize to probability distribution
+                    row_sum = soft_targets[j].sum()
+                    if row_sum > 0:
+                        soft_targets[j] /= row_sum
+                    else:
+                        # Fallback: uniform over models with non-zero scores
+                        nonzero = [k for k, v in scores.items() if v > 0]
+                        if nonzero:
+                            for mid in nonzero:
+                                soft_targets[j, model_to_idx[mid]] = 1.0 / len(nonzero)
+
+                log_probs = F.log_softmax(logits, dim=-1)
+                loss = criterion(log_probs, soft_targets)
+            else:
+                targets = torch.tensor(
+                    [model_to_idx.get(item["best_model"], 0) for item in batch_items],
+                    device=device,
+                )
+                loss = criterion(logits, targets)
 
             # ── Backward ────────────────────────────────────────────────
             optimizer.zero_grad()
@@ -205,6 +273,15 @@ def train_router_oracle(
             if global_step % 50 == 0:
                 writer.add_scalar("train/loss", loss.item(), global_step)
                 writer.add_scalar("train/lr", scheduler.get_last_lr()[0], global_step)
+                print(json.dumps({
+                    "type": "router_train_step",
+                    "step": global_step,
+                    "total_steps": total_steps,
+                    "epoch": epoch + 1,
+                    "total_epochs": epochs,
+                    "loss": round(loss.item(), 4),
+                    "lr": round(scheduler.get_last_lr()[0], 8),
+                }, default=str), flush=True)
                 print(f"  [E{epoch+1:02d} | step {global_step:05d}] loss={loss.item():.4f}")
 
             if global_step % save_every == 0:
@@ -233,6 +310,14 @@ def train_router_oracle(
 
         val_acc = correct / len(val_items)
         writer.add_scalar("val/accuracy", val_acc, epoch)
+        print(json.dumps({
+            "type": "router_train_epoch",
+            "epoch": epoch + 1,
+            "total_epochs": epochs,
+            "avg_loss": round(avg_loss, 4),
+            "val_acc": round(val_acc, 4),
+            "global_step": global_step,
+        }, default=str), flush=True)
         print(f"  [E{epoch+1:02d}] avg_loss={avg_loss:.4f}  val_acc={val_acc:.4f}")
         router.train()
 
@@ -243,8 +328,54 @@ def train_router_oracle(
     # ── Final ───────────────────────────────────────────────────────────
     final_path = output_dir / "final.pt"
     save_checkpoint(router, optimizer, scheduler, global_step, {}, final_path)
+
+    # ── Versioned summary ───────────────────────────────────────────────
+    from datetime import datetime
+    import shutil
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    summary_dir = Path("results/router_training")
+    summary_dir.mkdir(parents=True, exist_ok=True)
+
+    summary = {
+        "timestamp": timestamp,
+        "total_steps": global_step,
+        "epochs": epochs,
+        "final_val_acc": round(val_acc, 4),
+        "final_train_loss": round(avg_loss, 4),
+        "model_ids": model_ids,
+        "soft_labels": use_soft,
+        "n_params": n_params,
+        "oracle_entries": len(oracle_items),
+    }
+
+    versioned_path = summary_dir / f"summary_{timestamp}.json"
+    latest_path = summary_dir / "summary_latest.json"
+    with open(versioned_path, "w") as f:
+        json.dump(summary, f, indent=2)
+    shutil.copy2(versioned_path, latest_path)
+
+    # Update history index
+    history_path = summary_dir / "history.json"
+    history = []
+    if history_path.exists():
+        with open(history_path) as hf:
+            history = json.load(hf)
+    history.append(summary)
+    with open(history_path, "w") as hf:
+        json.dump(history, hf, indent=2)
+
+    # Emit completion event
+    print(json.dumps({
+        "type": "router_train_complete",
+        "final_val_acc": round(val_acc, 4),
+        "final_train_loss": round(avg_loss, 4),
+        "total_steps": global_step,
+        "summary_file": versioned_path.name,
+    }, default=str), flush=True)
+
     writer.close()
     print(f"  ✅ Training complete → {final_path}")
+    print(f"  📊 Summary → {versioned_path}")
     return 0
 
 
@@ -259,6 +390,8 @@ def main():
     parser.add_argument("--models-config", default="configs/models.yaml")
     parser.add_argument("--projectors-dir", default="checkpoints/alignment")
     parser.add_argument("--output-dir", default="checkpoints/router")
+    parser.add_argument("--soft-labels", action="store_true",
+                        help="Use KL divergence loss against score distribution instead of hard cross-entropy")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -267,6 +400,7 @@ def main():
     print(f"  Config:  {args.config}")
     print(f"  Projectors: {args.projectors_dir}")
     print(f"  Output:  {args.output_dir}")
+    print(f"  Soft labels: {args.soft_labels}")
     print("=" * 60)
 
     sys.exit(
@@ -276,6 +410,7 @@ def main():
             models_config_path=args.models_config,
             projectors_dir=args.projectors_dir,
             output_dir_override=args.output_dir,
+            soft_labels=args.soft_labels,
         )
     )
 

@@ -16,3 +16,8 @@ ui/saga_lab.db-shm
 ui/saga_lab.db-wal
 ui/logs/
 ui/.ui_processes.json
+
+# Generated oracle labels data
+data/oracle_labels_*.jsonl
+data/oracle_labels_latest.jsonl
+data/oracle_labels_history.json

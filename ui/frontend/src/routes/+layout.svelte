@@ -40,6 +40,8 @@
 		{ path: '/raw-baseline', label: 'Raw Baseline', icon: '📏' },
 		{ path: '/smoke-test', label: 'Smoke Test', icon: '🧪' },
 		{ path: '/oracle-labels', label: 'Oracle Labels', icon: '🏷️' },
+		{ path: '/oracle-validation', label: 'Oracle Validation', icon: '📊' },
+		{ path: '/router-training', label: 'Router Training', icon: '🔀' },
 	];
 </script>
 

@@ -48,6 +48,10 @@ class MetricCollector:
                     await self._handle_eval_progress(run_id, data)
                 elif msg_type in ("alignment_progress", "alignment_epoch", "alignment_start"):
                     await self._handle_alignment_progress(run_id, data)
+                elif msg_type in ("oracle_progress", "oracle_start", "oracle_complete"):
+                    await self._handle_oracle_progress(run_id, data)
+                elif msg_type in ("router_train_start", "router_train_step", "router_train_epoch", "router_train_complete"):
+                    await self._handle_router_train_progress(run_id, data)
                 else:
                     # Unknown JSON type, treat as log
                     await self.events.publish_log(run_id, line, "info")
@@ -128,6 +132,24 @@ class MetricCollector:
         # Publish to alignment:progress channel (for alignment monitor page)
         await self.events.publish("alignment:progress", Event(
             channel="alignment:progress",
+            data={**data, "run_id": run_id},
+        ))
+
+    async def _handle_oracle_progress(self, run_id: int, data: dict[str, Any]) -> None:
+        """Handle oracle label generation progress events."""
+        from .event_stream import Event
+
+        await self.events.publish("oracle:progress", Event(
+            channel="oracle:progress",
+            data={**data, "run_id": run_id},
+        ))
+
+    async def _handle_router_train_progress(self, run_id: int, data: dict[str, Any]) -> None:
+        """Handle router training progress events."""
+        from .event_stream import Event
+
+        await self.events.publish("router:progress", Event(
+            channel="router:progress",
             data={**data, "run_id": run_id},
         ))
 

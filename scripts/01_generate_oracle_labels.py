@@ -158,6 +158,29 @@ def _load_boolq_prompts(n: int, seed: int) -> List[Dict[str, Any]]:
     return items[:n]
 
 
+def _load_humaneval_prompts(n: int, seed: int) -> List[Dict[str, Any]]:
+    """Load HumanEval: code generation (function body from signature + docstring)."""
+    print(f"  [data] Loading HumanEval (target: {n} samples)…")
+    items: List[Dict[str, Any]] = []
+    try:
+        ds = load_dataset("openai/openai_humaneval", split="test", streaming=True)
+        for ex in ds:
+            items.append({
+                "task_id": ex["task_id"],
+                "prompt": ex["prompt"],
+                "canonical_solution": ex["canonical_solution"],
+                "test": ex["test"],
+                "entry_point": ex["entry_point"],
+                "source": "humaneval",
+            })
+            if len(items) >= n:
+                break
+    except Exception as e:
+        print(f"    Warning: could not load HumanEval: {e}")
+    random.Random(seed).shuffle(items)
+    return items[:n]
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Prompt builders — turn raw data into prompt strings
 # ═══════════════════════════════════════════════════════════════════════════
@@ -183,6 +206,9 @@ def _build_prompt(item: Dict[str, Any]) -> str:
     elif source == "boolq":
         return _format_boolq(item["question"], item["passage"])
 
+    elif source == "humaneval":
+        return f"Complete the Python function.\n\n{item['prompt']}"
+
     else:
         return item.get("question", str(item))
 
@@ -202,6 +228,9 @@ def _get_ground_truth(item: Dict[str, Any]) -> str:
 
     elif source == "boolq":
         return "True" if item["answer"] else "False"
+
+    elif source == "humaneval":
+        return item.get("canonical_solution", "")
 
     return ""
 
@@ -245,6 +274,9 @@ def _score_exact_match(
             pred = _extract_boolq_answer(ans)
             gt = ground_truth.lower() == "true"
             scores[mid] = 1.0 if pred == gt else 0.0
+        elif source == "humaneval":
+            # Code generation — exact match not meaningful, use judge instead
+            scores[mid] = 0.0
         else:
             # ARC, HellaSwag, WinoGrande — all letter-based
             pred = _extract_answer_letter(ans)
@@ -455,6 +487,7 @@ def generate_oracle_labels(
     hellaswag_n: int = 500,
     winogrande_n: int = 500,
     boolq_n: int = 500,
+    humaneval_n: int = 164,
     seed: int = 42,
     output_path: str = "data/oracle_labels.jsonl",
     oracle_mode: str = "judge_ppl_fallback",
@@ -469,6 +502,7 @@ def generate_oracle_labels(
     all_prompts.extend(_load_hellaswag_prompts(hellaswag_n, seed))
     all_prompts.extend(_load_winogrande_prompts(winogrande_n, seed))
     all_prompts.extend(_load_boolq_prompts(boolq_n, seed))
+    all_prompts.extend(_load_humaneval_prompts(humaneval_n, seed))
     random.shuffle(all_prompts)
 
     if max_samples is not None and max_samples < len(all_prompts):
@@ -487,6 +521,16 @@ def generate_oracle_labels(
     device = next(iter(models.values())).encoding_device
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Emit start event for UI progress tracking
+    total_prompts = len(all_prompts)
+    print(json.dumps({
+        "type": "oracle_start",
+        "total": total_prompts,
+        "sources": source_counts,
+        "models": model_ids,
+        "oracle_mode": oracle_mode,
+    }, default=str), flush=True)
 
     # Load judge if needed
     judge_model = None
@@ -583,10 +627,15 @@ def generate_oracle_labels(
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
             total += 1
 
-            if (idx + 1) % 100 == 0:
-                score_str = ", ".join(f"{k}={v:.2f}" for k, v in scores.items())
-                print(f"  [oracle] {idx+1}/{len(all_prompts)}  best={best_model}  "
-                      f"scores={{ {score_str} }}")
+            if (idx + 1) % 10 == 0:
+                print(json.dumps({
+                    "type": "oracle_progress",
+                    "current": idx + 1,
+                    "total": total_prompts,
+                    "best_model": best_model,
+                    "scores": {k: round(v, 3) for k, v in scores.items()},
+                    "source": source,
+                }, default=str), flush=True)
 
     # Update latest pointer
     import shutil
@@ -611,6 +660,14 @@ def generate_oracle_labels(
     with open(history_path, "w") as hf:
         json.dump(history, hf, indent=2)
 
+    # Emit completion event for UI
+    print(json.dumps({
+        "type": "oracle_complete",
+        "total": total,
+        "filename": versioned_path.name,
+        "source_counts": source_counts,
+    }, default=str), flush=True)
+
     print(f"  [oracle] Wrote {total} entries → {versioned_path}")
     print(f"  [oracle] Latest → {latest_path}")
     return total
@@ -630,6 +687,8 @@ def main():
                         help="Number of WinoGrande samples")
     parser.add_argument("--boolq-samples", type=int, default=500,
                         help="Number of BoolQ samples")
+    parser.add_argument("--humaneval-samples", type=int, default=164,
+                        help="Number of HumanEval samples (code generation)")
     parser.add_argument("--output", default="data/oracle_labels.jsonl")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--oracle-mode", default="judge_ppl_fallback",
@@ -651,6 +710,7 @@ def main():
         hellaswag_n=args.hellaswag_samples,
         winogrande_n=args.winogrande_samples,
         boolq_n=args.boolq_samples,
+        humaneval_n=args.humaneval_samples,
         seed=args.seed,
         output_path=args.output,
         oracle_mode=args.oracle_mode,

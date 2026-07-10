@@ -55,6 +55,10 @@ SCRIPT_PARAMS: dict[str, dict[str, dict]] = {
             "type": "int", "default": 500, "label": "BoolQ Samples",
             "min": 10, "max": 5000,
         },
+        "humaneval-samples": {
+            "type": "int", "default": 164, "label": "HumanEval Samples (code)",
+            "min": 10, "max": 200,
+        },
         "max-samples": {
             "type": "int", "default": None, "label": "Max Samples (global cap)",
             "min": 10, "max": 10000,
@@ -89,6 +93,12 @@ SCRIPT_PARAMS: dict[str, dict[str, dict]] = {
         },
     },
     "06_train_router_rlaif": {},
+    "03_train_router": {
+        "soft-labels": {
+            "type": "flag", "default": False, "label": "Soft Labels (KL divergence)",
+            "help": "Use KL divergence against score distribution instead of hard cross-entropy",
+        },
+    },
     "06_train_poisoned": {
         "num-triggered": {
             "type": "int", "default": 100, "label": "Triggered Samples",

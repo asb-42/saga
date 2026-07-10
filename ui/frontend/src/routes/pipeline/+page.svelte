@@ -20,6 +20,12 @@
 	let scriptRuns = $state<Record<string, any[]>>({});
 	let runOutputs = $state<Record<number, any>>({});
 
+	// Oracle progress state
+	let oracleProgress = $state<Record<number, { current: number; total: number; best_model: string; source: string }>>({});
+
+	// Router training progress state
+	let routerProgress = $state<Record<number, { step: number; total_steps: number; epoch: number; total_epochs: number; loss: number }>>({});
+
 	// Elapsed time tracking
 	let elapsedTimes = $state<Record<number, string>>({});
 	let elapsedIntervals = $state<Record<number, ReturnType<typeof setInterval>>>({});
@@ -65,6 +71,33 @@
 					const line = data.line;
 					const level = data.level || 'info';
 					liveLogs[runId] = [...(liveLogs[runId] || []).slice(-99), `[${level}] ${line}`];
+
+					// Check if the log line contains an embedded JSON progress event
+					try {
+						const embedded = JSON.parse(line);
+						if (embedded.type === 'oracle_progress' && embedded.current) {
+							oracleProgress[runId] = {
+								current: embedded.current,
+								total: embedded.total,
+								best_model: embedded.best_model,
+								source: embedded.source,
+							};
+						} else if (embedded.type === 'oracle_complete') {
+							delete oracleProgress[runId];
+						} else if (embedded.type === 'router_train_step') {
+							routerProgress[runId] = {
+								step: embedded.step,
+								total_steps: embedded.total_steps,
+								epoch: embedded.epoch,
+								total_epochs: embedded.total_epochs,
+								loss: embedded.loss,
+							};
+						} else if (embedded.type === 'router_train_complete') {
+							delete routerProgress[runId];
+						}
+					} catch {
+						// Not JSON, just a plain log line — ignore
+					}
 				}
 			} catch (e) {
 				// Ignore parse errors
@@ -462,6 +495,43 @@
 														<span class="text-[10px] text-gray-600">{new Date(run.created_at).toLocaleString()}</span>
 													</div>
 												</div>
+
+												<!-- Oracle progress bar -->
+												{#if isRunning && oracleProgress[run.id]}
+													{@const op = oracleProgress[run.id]}
+													{@const pct = op.total > 0 ? ((op.current / op.total) * 100).toFixed(1) : '0'}
+													<div class="mt-2">
+														<div class="flex items-center justify-between text-[10px] mb-1">
+															<span class="text-[#00d4ff] font-mono">Generating oracle labels</span>
+															<span class="text-gray-400 font-mono">{op.current}/{op.total} ({pct}%)</span>
+														</div>
+														<div class="h-1.5 bg-gray-800 rounded-full overflow-hidden" role="progressbar" aria-label="Oracle label generation progress">
+															<div class="h-full bg-[#00d4ff] rounded-full transition-all duration-300" style="width: {pct}%"></div>
+														</div>
+														<div class="flex items-center gap-3 mt-1 text-[10px] text-gray-500">
+															<span>best: <span class="text-[#00d4ff]">{op.best_model}</span></span>
+															<span>source: {op.source}</span>
+														</div>
+													</div>
+												{/if}
+
+												<!-- Router training progress bar -->
+												{#if isRunning && routerProgress[run.id]}
+													{@const rp = routerProgress[run.id]}
+													{@const rpct = rp.total_steps > 0 ? ((rp.step / rp.total_steps) * 100).toFixed(1) : '0'}
+													<div class="mt-2">
+														<div class="flex items-center justify-between text-[10px] mb-1">
+															<span class="text-[#a78bfa] font-mono">Training router</span>
+															<span class="text-gray-400 font-mono">Epoch {rp.epoch}/{rp.total_epochs} · Step {rp.step}/{rp.total_steps} ({rpct}%)</span>
+														</div>
+														<div class="h-1.5 bg-gray-800 rounded-full overflow-hidden" role="progressbar" aria-label="Router training progress">
+															<div class="h-full bg-[#a78bfa] rounded-full transition-all duration-300" style="width: {rpct}%"></div>
+														</div>
+														<div class="flex items-center gap-3 mt-1 text-[10px] text-gray-500">
+															<span>loss: <span class="text-white">{rp.loss?.toFixed(4) ?? '-'}</span></span>
+														</div>
+													</div>
+												{/if}
 
 												<!-- Live logs for running -->
 												{#if isRunning && liveLogs[run.id]?.length}
