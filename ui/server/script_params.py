@@ -94,6 +94,14 @@ SCRIPT_PARAMS: dict[str, dict[str, dict]] = {
     },
     "06_train_router_rlaif": {},
     "03_train_router": {
+        "oracle-labels": {
+            "type": "select", "default": "data/oracle_labels_latest.jsonl", "label": "Oracle Labels",
+            "choices": ["data/oracle_labels_latest.jsonl", "data/oracle_labels.jsonl"],
+        },
+        "projectors-dir": {
+            "type": "select", "default": "checkpoints/alignment_structured", "label": "Projectors Checkpoint",
+            "choices": ["checkpoints/alignment_structured", "checkpoints/alignment"],
+        },
         "soft-labels": {
             "type": "flag", "default": False, "label": "Soft Labels (KL divergence)",
             "help": "Use KL divergence against score distribution instead of hard cross-entropy",
