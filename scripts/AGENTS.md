@@ -28,6 +28,23 @@ Pipeline order (sequential dependencies):
 | `09_integration_test.py` | End-to-end smoke test (4 prompts) | All above |
 | `10_full_evaluation.py` | Full Phase 1 evaluation against success criteria | All above |
 | `diagnose_alignment.py` | Alignment quality check (code/math/wiki domains) | 02 |
+| `train_subtle_backdoor.py` | Train subtle semantic backdoor (wrong city/country) | 06 |
+| `path4g_separated_detection.py` | Two-layer immune system: competence/malice separation | None |
+| `path4h_subtle_backdoor.py` | Benchmark subtle backdoor detection | path4g |
+| `test_alignment_removal.py` | Test alignment removal detection | path4g |
+| `test_uncensored_model.py` | Test real uncensored model detection | path4g |
+| `test_1_5b_scale.py` | Scale validation with 1.5B-Instruct | path4g |
+| `test_7b_model.py` | Scale validation with 7B model (pending download) | path4g |
+| `test_uncensored_ensemble.py` | Uncensored model + subtle backdoor benchmark | path4g |
+| `path4i_role_aware_detection.py` | Role-aware detection (sentinel-worker architecture) | path4g |
+| `test_7b_sentinel.py` | 7B sentinel validation benchmark | path4g |
+| `test_full_sentinel_benchmark.py` | Full sentinel-worker integration benchmark | path4g |
+| `competence_benchmark.py` | Core value test: does ensemble beat best single model? | path4g |
+| `hard_reasoning_benchmark.py` | Hard reasoning test (math, logic, code debug) | path4g |
+| `7b_ensemble_benchmark.py` | 7B ensemble benchmark (full, with math model) | path4g |
+| `7b_ensemble_quick.py` | 7B ensemble benchmark (coder + reasoning only) | path4g |
+| `test_consensus_synthesis.py` | Consensus-aware synthesis test (old vs new) | path4g |
+| `consensus_synthesis_benchmark.py` | Full 7B ensemble + consensus-aware synthesis benchmark | path4g |
 
 ## Work Guidance
 

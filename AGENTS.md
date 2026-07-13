@@ -78,6 +78,64 @@ Default section order:
 
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
 
+## Locked Architecture (2026-07-12)
+
+The architecture is locked. Do not resurrect the old router path.
+
+### What Works
+- **Embedding alignment**: Shared space for visualization, anomaly detection, consensus
+- **Consensus detection**: Detects output divergence (backdoors, competence failures)
+- **Sentinel-worker architecture**: 7B sentinel refuses, workers flagged on disagreement
+- **Judge synthesis**: Works for math (+10%), hurts when both models correct (40% vs 100%)
+- **Path 4 output-based routing**: The only viable path
+
+### What Failed (Do Not Resurrect)
+- **Transformer router**: Proven non-viable for 0.36B–2.7B models
+- **Structured alignment training**: Does not help routing
+- **Oracle labels**: Not needed for output-based routing
+- **Embedding-based routing**: Models too similar, no complementary strengths
+
+### Current Ensemble (4-bit quantized)
+| Role | Model | VRAM | Purpose |
+|------|-------|------|---------|
+| Code specialist | Qwen2.5-Coder-7B | ~3.5 GB | Code generation, debugging |
+| Reasoning specialist | Qwen2.5-7B-Instruct | ~3.5 GB | General reasoning, math |
+| Sentinel | Qwen2.5-7B-Instruct | ~3.5 GB | Refusal capability, safety |
+| Judge | Qwen2.5-7B-Instruct | ~3.5 GB | Synthesis evaluation |
+
+**Total: ~14 GB** — fits RTX 4090 (24 GB)
+
+### Synthesis Strategy (Consensus-Aware)
+| Scenario | Strategy | Why |
+|----------|----------|-----|
+| High consensus (>0.8) | Pick best answer | All models agree, no synthesis needed |
+| Majority agreement (>0.5) | Majority vote | Most models agree, synthesis adds noise |
+| High disagreement (<0.5) | Judge synthesis + flag | Models disagree, needs expert evaluation |
+
+### Key Results
+- **Math**: Ensemble +10% (40% vs 30% best single)
+- **Logic**: Ensemble matches best (50%)
+- **Code**: Both models 100%, synthesis hurts (40%)
+- **Full 100-prompt benchmark**: NEUTRAL (66.7% vs 67.9% best fixed)
+  - Captures 86.5% of oracle routing value (target: >80%) ✅
+  - Consensus-aware vs uniform: 95.7% (target: >60%) ✅
+  - Oracle shows 77.1% achievable with perfect routing
+- **V2 Weighted Synthesis**: STRONG (74.6% vs 67.7% best fixed)
+  - Captures 95.0% of oracle routing value (target: >80%) ✅
+  - Consensus-aware vs uniform: 110.4% (target: >60%) ✅
+  - Ensemble beats best fixed by 10.2% ✅
+- **Trivial backdoor**: TPR 90%, FPR 0%
+- **Sentinel refusal**: 90% TPR, 10% FPR on benign
+
+### Phase 2 Scope
+- QLoRA adapter fine-tuning for volunteers
+- Poisoned adapter detection
+- UI "immune system" visualization
+- Model upgrade path (7B → 14B → 70B)
+
+### Progress Reports
+- `docs/reports/2026-07-12_technical_progress_report.md` — Full technical progress report (July 11–12, 2026)
+
 ## Child DOX Index
 
 | Path | Covers |
